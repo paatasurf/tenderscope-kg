@@ -160,18 +160,20 @@ class BCScraperPGImporter(BaseImporter):
             cur.execute("""
                 SELECT
                     id,
-                    COALESCE(display_name, name, '') AS display_name,
+                    COALESCE(NULLIF(display_name, ''), name, '') AS display_name,
                     name,
                     entity_role,
                     canonical_company_id,
                     construction_score,
-                    city,
-                    province,
-                    website,
-                    phone,
-                    email,
                     total_projects,
-                    total_permit_value
+                    total_award_value,
+                    award_count,
+                    primary_city,
+                    primary_province,
+                    google_address,
+                    google_phone,
+                    primary_trade,
+                    dominant_sector
                 FROM public.companies
                 ORDER BY id
             """)
@@ -183,8 +185,10 @@ class BCScraperPGImporter(BaseImporter):
                     (
                         db_id, display_name, raw_name, entity_role,
                         canonical_company_id, construction_score,
-                        city, province, website, phone, email,
-                        total_projects, total_permit_value,
+                        total_projects, total_award_value, award_count,
+                        primary_city, primary_province,
+                        google_address, google_phone,
+                        primary_trade, dominant_sector,
                     ) = row
 
                     name = _s(display_name) or _s(raw_name)
@@ -199,16 +203,19 @@ class BCScraperPGImporter(BaseImporter):
                         attrs["canonical_company_id"] = canonical_company_id
                     if construction_score is not None:
                         attrs["construction_score"] = construction_score
+                    if total_projects:
+                        attrs["total_projects"] = total_projects
+                    if total_award_value:
+                        attrs["total_award_value"] = total_award_value
+                    if award_count:
+                        attrs["award_count"] = award_count
                     for k, v in [
-                        ("city", city), ("province", province),
-                        ("website", website), ("phone", phone), ("email", email),
+                        ("city", primary_city), ("province", primary_province),
+                        ("address", google_address), ("phone", google_phone),
+                        ("primary_trade", primary_trade), ("dominant_sector", dominant_sector),
                     ]:
                         if _s(v):
                             attrs[k] = _s(v)
-                    if total_projects:
-                        attrs["total_projects"] = total_projects
-                    if total_permit_value:
-                        attrs["total_permit_value"] = str(total_permit_value)
 
                     try:
                         entity, created = self.repo.put_entity(
