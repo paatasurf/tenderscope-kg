@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "tkg-mcp --repo /app --no-index"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
