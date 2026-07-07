@@ -1700,9 +1700,13 @@ class KGServer:
             await self._server.run(read_stream, write_stream, self._server.create_initialization_options())
 
     async def serve_sse(self, host: str = "0.0.0.0", port: int = 8080) -> None:
+        import os
+
         import uvicorn
         from mcp.server.sse import SseServerTransport
         from starlette.applications import Starlette
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse
         from starlette.routing import Mount, Route
 
         sse = SseServerTransport("/messages/")
@@ -1717,9 +1721,71 @@ class KGServer:
                     self._server.create_initialization_options(),
                 )
 
+        async def handle_health(request: Request) -> JSONResponse:
+            stats = self.db.biz_repo.get_stats() if self.db.biz_repo else {}
+            return JSONResponse({"status": "ok", "graph": stats})
+
+        async def handle_verify(request: Request) -> JSONResponse:
+            """Phase 1: verify read access to public.* tables."""
+            import psycopg2
+
+            database_url = os.environ.get("DATABASE_URL", "").strip()
+            if not database_url:
+                return JSONResponse(
+                    {"error": "DATABASE_URL not set"}, status_code=503
+                )
+            try:
+                conn = psycopg2.connect(database_url)
+                from tenderscope_kg.importers.bc_scraper_pg_importer import (
+                    BCScraperPGImporter,
+                )
+
+                importer = BCScraperPGImporter(
+                    repo=self.db.biz_repo, conn=conn
+                )
+                counts = importer.verify_access()
+                conn.close()
+                return JSONResponse({"status": "ok", "public_table_counts": counts})
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        async def handle_import(request: Request) -> JSONResponse:
+            """Phase 2: import public.* → graph.* via BCScraperPGImporter."""
+            import psycopg2
+
+            database_url = os.environ.get("DATABASE_URL", "").strip()
+            if not database_url:
+                return JSONResponse(
+                    {"error": "DATABASE_URL not set"}, status_code=503
+                )
+            if self.db.biz_repo is None:
+                return JSONResponse(
+                    {"error": "graph repository not initialised"}, status_code=503
+                )
+            try:
+                conn = psycopg2.connect(database_url)
+                from tenderscope_kg.importers.bc_scraper_pg_importer import (
+                    BCScraperPGImporter,
+                )
+
+                importer = BCScraperPGImporter(
+                    repo=self.db.biz_repo, conn=conn
+                )
+                result = importer.run()
+                conn.close()
+                graph_stats = self.db.biz_repo.get_stats()
+                return JSONResponse(
+                    {"import_result": result.to_dict(), "graph_stats": graph_stats}
+                )
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
         app = Starlette(
             routes=[
                 Route("/sse", endpoint=handle_sse),
+                Route("/api/health", endpoint=handle_health),
+                Route("/api/verify", endpoint=handle_verify),
+                Route("/api/import", endpoint=handle_import, methods=["POST"]),
                 Mount("/messages/", app=sse.handle_post_message),
             ]
         )
