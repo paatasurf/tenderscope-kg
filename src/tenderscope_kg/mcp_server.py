@@ -1699,6 +1699,35 @@ class KGServer:
         async with stdio_server() as (read_stream, write_stream):
             await self._server.run(read_stream, write_stream, self._server.create_initialization_options())
 
+    async def serve_sse(self, host: str = "0.0.0.0", port: int = 8080) -> None:
+        import uvicorn
+        from mcp.server.sse import SseServerTransport
+        from starlette.applications import Starlette
+        from starlette.routing import Mount, Route
+
+        sse = SseServerTransport("/messages/")
+
+        async def handle_sse(request):
+            async with sse.connect_sse(
+                request.scope, request.receive, request._send
+            ) as (read_stream, write_stream):
+                await self._server.run(
+                    read_stream,
+                    write_stream,
+                    self._server.create_initialization_options(),
+                )
+
+        app = Starlette(
+            routes=[
+                Route("/sse", endpoint=handle_sse),
+                Mount("/messages/", app=sse.handle_post_message),
+            ]
+        )
+        config = uvicorn.Config(app, host=host, port=port, log_level="info")
+        server = uvicorn.Server(config)
+        click.echo(f"MCP SSE server listening on {host}:{port}", err=True)
+        await server.serve()
+
 
 @click.command()
 @click.option("--repo", required=True, help="Path to the repository root to index")
@@ -1708,9 +1737,17 @@ class KGServer:
     help="Path to the graph database file (default: <repo>/.tkg/graph.db)",
 )
 @click.option("--index/--no-index", default=True, help="Run indexer on startup")
-def run(repo: str, db: str | None, index: bool) -> None:
+@click.option(
+    "--transport",
+    default="stdio",
+    type=click.Choice(["stdio", "sse"]),
+    help="Transport: stdio (default, for local AI agents) or sse (HTTP, for Railway/cloud)",
+)
+@click.option("--port", default=None, type=int, help="HTTP port for SSE transport (default: $PORT or 8080)")
+def run(repo: str, db: str | None, index: bool, transport: str, port: int | None) -> None:
     """Start the TenderScope Knowledge Graph MCP server."""
     import asyncio
+    import os
 
     repo_path = Path(repo).resolve()
     if not repo_path.exists():
@@ -1731,4 +1768,8 @@ def run(repo: str, db: str | None, index: bool) -> None:
             err=True,
         )
 
-    asyncio.run(server.serve())
+    if transport == "sse":
+        http_port = port or int(os.environ.get("PORT", "8080"))
+        asyncio.run(server.serve_sse(port=http_port))
+    else:
+        asyncio.run(server.serve())

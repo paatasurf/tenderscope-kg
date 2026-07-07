@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir ".[postgres]"
 
 COPY . .
 
-CMD ["tkg-mcp", "--repo", "/app", "--no-index"]
+CMD ["tkg-mcp", "--repo", "/app", "--no-index", "--transport", "sse"]
