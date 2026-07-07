@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "tenderscope-kg"
 version = "0.1.0"
 description = "Local Knowledge Graph & Context Engine with MCP tools for AI coding agents"
-readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
