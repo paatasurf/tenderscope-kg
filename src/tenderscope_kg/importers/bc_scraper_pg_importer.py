@@ -502,12 +502,16 @@ class BCScraperPGImporter(BaseImporter):
                                 attrs[k] = _s(v)
 
                         try:
+                            _preserved_uid = self._uid_snapshot.get(
+                                (BizEntityKind.TENDER.value, canonicalize(name))
+                            )
                             entity, created = self.repo.put_entity(
                                 kind=BizEntityKind.TENDER,
                                 name=name,
                                 attributes=attrs,
                                 source=_SOURCE,
                                 write_history=False,
+                                uid=_preserved_uid,
                             )
                             self._tender_title_to_uid[f"{table}:{db_id}"] = entity.uid
                             if created:
@@ -593,12 +597,16 @@ class BCScraperPGImporter(BaseImporter):
                         attrs[k] = _s(v)
 
                 try:
+                    _preserved_uid = self._uid_snapshot.get(
+                        (BizEntityKind.PERMIT.value, canonicalize(name))
+                    )
                     permit_e, created = self.repo.put_entity(
                         kind=BizEntityKind.PERMIT,
                         name=name,
                         attributes=attrs,
                         source=_SOURCE,
                         write_history=False,
+                        uid=_preserved_uid,
                     )
                     if created:
                         result.entities_created += 1
@@ -664,12 +672,16 @@ class BCScraperPGImporter(BaseImporter):
                                 attrs[k] = v if isinstance(v, (int, float)) else _s(v)
 
                         try:
+                            _preserved_uid = self._uid_snapshot.get(
+                                (BizEntityKind.CONTRACT.value, canonicalize(name))
+                            )
                             contract_e, created = self.repo.put_entity(
                                 kind=BizEntityKind.CONTRACT,
                                 name=name,
                                 attributes=attrs,
                                 source=_SOURCE,
                                 write_history=False,
+                                uid=_preserved_uid,
                             )
                             if created:
                                 result.entities_created += 1
@@ -761,11 +773,15 @@ class BCScraperPGImporter(BaseImporter):
             if not name:
                 continue
             try:
+                _preserved_uid = self._uid_snapshot.get(
+                    (BizEntityKind.ORGANIZATION.value, canonicalize(name))
+                )
                 _, created = self.repo.put_entity(
                     kind=BizEntityKind.ORGANIZATION,
                     name=name,
                     source=_SOURCE,
                     write_history=False,
+                    uid=_preserved_uid,
                 )
                 if created:
                     result.entities_created += 1
