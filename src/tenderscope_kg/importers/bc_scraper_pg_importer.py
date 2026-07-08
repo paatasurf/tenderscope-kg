@@ -28,6 +28,7 @@ import time
 from typing import Any, Optional
 
 from ..domain import BizEntityKind, BizRelationKind, IdentityEvidence, EXTERNAL_ID_KEYS
+from ..domain.kinds import canonicalize
 from ..domain.results import ImportResult
 from ..repository._base import BizRepository
 from .base import BaseImporter
@@ -62,6 +63,12 @@ class BCScraperPGImporter(BaseImporter):
                         The connection is used read-only; no writes are made
                         to public.* tables.
         batch_size:     Rows fetched per cursor iteration (memory control).
+        uid_snapshot:   Optional mapping of (kind_str, canonical_name_str) ->
+                        uid_str captured before a re-import truncation.  When
+                        provided, put_entity() receives the original uid= for
+                        every entity whose key appears in the snapshot,
+                        guaranteeing UID stability across migrations.  Pass
+                        None (the default) for a fresh import from scratch.
     """
 
     name = "bc_scraper_pg"
@@ -71,10 +78,12 @@ class BCScraperPGImporter(BaseImporter):
         repo: BizRepository,
         conn: Any,
         batch_size: int = 500,
+        uid_snapshot: Optional[dict[tuple[str, str], str]] = None,
     ) -> None:
         super().__init__(repo, source_tag=_SOURCE)
         self._conn = conn
         self._batch_size = batch_size
+        self._uid_snapshot: dict[tuple[str, str], str] = uid_snapshot or {}
 
     # ── Public entry point ────────────────────────────────────────────────
 
@@ -268,12 +277,16 @@ class BCScraperPGImporter(BaseImporter):
             )
 
             try:
+                _preserved_uid = self._uid_snapshot.get(
+                    (BizEntityKind.COMPANY.value, canonicalize(name))
+                )
                 entity, created = self.repo.put_entity(
                     kind=BizEntityKind.COMPANY,
                     name=name,
                     attributes=attrs,
                     source=_SOURCE,
                     write_history=False,
+                    uid=_preserved_uid,
                 )
                 self._company_id_to_uid[db_id] = entity.uid
                 _canonical_scraper_id_to_uid[db_id] = entity.uid
@@ -323,12 +336,16 @@ class BCScraperPGImporter(BaseImporter):
             attrs["alias_for_uid"] = canonical_uid
 
             try:
+                _preserved_alias_uid = self._uid_snapshot.get(
+                    (BizEntityKind.COMPANY_ALIAS.value, canonicalize(name))
+                )
                 alias_entity, created = self.repo.put_entity(
                     kind=BizEntityKind.COMPANY_ALIAS,
                     name=name,
                     attributes=attrs,
                     source=_SOURCE,
                     write_history=False,
+                    uid=_preserved_alias_uid,
                 )
                 # ALIAS_OF edge: alias → canonical COMPANY.
                 # Carry a structured IdentityEvidence payload so every
