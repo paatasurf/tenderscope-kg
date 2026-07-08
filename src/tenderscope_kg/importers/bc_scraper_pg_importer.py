@@ -96,6 +96,9 @@ class BCScraperPGImporter(BaseImporter):
             result.errors.append(f"Verify access failed: {exc}")
             return result
 
+        # Steps that manage their own batched transactions internally
+        _self_transacting = {self._import_permits}
+
         steps = [
             self._import_companies,
             self._import_tenders,
@@ -105,7 +108,11 @@ class BCScraperPGImporter(BaseImporter):
         ]
         for step in steps:
             try:
-                sub = step()
+                if step in _self_transacting:
+                    sub = step()
+                else:
+                    with self.repo.transaction():
+                        sub = step()
                 result.entities_created += sub.entities_created
                 result.entities_updated += sub.entities_updated
                 result.relations_created += sub.relations_created
@@ -324,10 +331,13 @@ class BCScraperPGImporter(BaseImporter):
 
     # ── Permits ───────────────────────────────────────────────────────────
 
+    _PERMIT_TX_SIZE = 2000  # rows per transaction batch
+
     def _import_permits(self) -> ImportResult:
         """
         Import public.permits → BizEntityKind.PERMIT.
         Link company_id → permit via HAS_PERMIT relation where set.
+        Processed in batches of _PERMIT_TX_SIZE to bound transaction size.
         """
         result = ImportResult(importer=f"{self.name}:permits")
         cur = self._conn.cursor()
@@ -339,57 +349,17 @@ class BCScraperPGImporter(BaseImporter):
                 FROM public.permits
                 ORDER BY id
             """)
+            batch: list = []
             while True:
                 rows = cur.fetchmany(self._batch_size)
                 if not rows:
+                    if batch:
+                        self._process_permit_batch(batch, result)
                     break
-                for row in rows:
-                    (db_id, external_id, address, city, permit_type,
-                     project_value, applicant, contractor,
-                     lifecycle_status, src, company_id) = row
-
-                    name = _s(external_id) or _s(address) or f"permit-{db_id}"
-                    attrs: dict = {"scraper_id": db_id}
-                    for k, v in [
-                        ("external_id", external_id), ("address", address),
-                        ("city", city), ("permit_type", permit_type),
-                        ("project_value", project_value), ("applicant", applicant),
-                        ("contractor", contractor), ("lifecycle_status", lifecycle_status),
-                        ("source", src),
-                    ]:
-                        if _s(v):
-                            attrs[k] = _s(v)
-
-                    try:
-                        permit_e, created = self.repo.put_entity(
-                            kind=BizEntityKind.PERMIT,
-                            name=name,
-                            attributes=attrs,
-                            source=_SOURCE,
-                            write_history=False,
-                        )
-                        if created:
-                            result.entities_created += 1
-                        else:
-                            result.entities_updated += 1
-
-                        # Link canonical company if resolved
-                        if company_id and company_id in self._company_id_to_uid:
-                            company_uid = self._company_id_to_uid[company_id]
-                            _, rc = self.repo.put_relation(
-                                source_uid=company_uid,
-                                kind=BizRelationKind.HAS_PERMIT,
-                                target_uid=permit_e.uid,
-                                source=_SOURCE,
-                                confidence=1.0,
-                            )
-                            if rc:
-                                result.relations_created += 1
-                            else:
-                                result.relations_updated += 1
-
-                    except Exception as exc:
-                        result.errors.append(f"permits.id={db_id}: {exc}")
+                batch.extend(rows)
+                if len(batch) >= self._PERMIT_TX_SIZE:
+                    self._process_permit_batch(batch, result)
+                    batch = []
         finally:
             cur.close()
 
@@ -399,6 +369,56 @@ class BCScraperPGImporter(BaseImporter):
             result.relations_created, len(result.errors),
         )
         return result
+
+    def _process_permit_batch(self, rows: list, result: ImportResult) -> None:
+        """Process one batch of permit rows inside a single transaction."""
+        with self.repo.transaction():
+            for row in rows:
+                (db_id, external_id, address, city, permit_type,
+                 project_value, applicant, contractor,
+                 lifecycle_status, src, company_id) = row
+
+                name = _s(external_id) or _s(address) or f"permit-{db_id}"
+                attrs: dict = {"scraper_id": db_id}
+                for k, v in [
+                    ("external_id", external_id), ("address", address),
+                    ("city", city), ("permit_type", permit_type),
+                    ("project_value", project_value), ("applicant", applicant),
+                    ("contractor", contractor),
+                    ("lifecycle_status", lifecycle_status), ("source", src),
+                ]:
+                    if _s(v):
+                        attrs[k] = _s(v)
+
+                try:
+                    permit_e, created = self.repo.put_entity(
+                        kind=BizEntityKind.PERMIT,
+                        name=name,
+                        attributes=attrs,
+                        source=_SOURCE,
+                        write_history=False,
+                    )
+                    if created:
+                        result.entities_created += 1
+                    else:
+                        result.entities_updated += 1
+
+                    if company_id and company_id in self._company_id_to_uid:
+                        company_uid = self._company_id_to_uid[company_id]
+                        _, rc = self.repo.put_relation(
+                            source_uid=company_uid,
+                            kind=BizRelationKind.HAS_PERMIT,
+                            target_uid=permit_e.uid,
+                            source=_SOURCE,
+                            confidence=1.0,
+                        )
+                        if rc:
+                            result.relations_created += 1
+                        else:
+                            result.relations_updated += 1
+
+                except Exception as exc:
+                    result.errors.append(f"permits.id={db_id}: {exc}")
 
     # ── Contract awards ───────────────────────────────────────────────────
 

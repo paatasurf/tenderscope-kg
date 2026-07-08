@@ -65,7 +65,10 @@ def open_repository(sqlite_db_path: Optional[Path] = None) -> BizRepository:
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if database_url:
         import psycopg2  # noqa: PLC0415
-        repo = create_repository("postgres", conn=psycopg2.connect(database_url))
+        repo = create_repository(
+            "postgres",
+            conn_factory=lambda: psycopg2.connect(database_url),
+        )
     else:
         if sqlite_db_path is not None:
             sqlite_db_path = Path(sqlite_db_path)

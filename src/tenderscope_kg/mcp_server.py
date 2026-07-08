@@ -1750,7 +1750,10 @@ class KGServer:
                 return JSONResponse({"error": str(exc)}, status_code=500)
 
         async def handle_import(request: Request) -> JSONResponse:
-            """Phase 2: import public.* → graph.* via BCScraperPGImporter."""
+            """Phase 2: import public.* → graph.* via BCScraperPGImporter.
+            Runs in a thread executor so the event loop stays unblocked.
+            """
+            import asyncio
             import psycopg2
 
             database_url = os.environ.get("DATABASE_URL", "").strip()
@@ -1762,18 +1765,26 @@ class KGServer:
                 return JSONResponse(
                     {"error": "graph repository not initialised"}, status_code=503
                 )
-            try:
-                conn = psycopg2.connect(database_url)
+
+            biz_repo = self.db.biz_repo
+
+            def _run_import():
                 from tenderscope_kg.importers.bc_scraper_pg_importer import (
                     BCScraperPGImporter,
                 )
+                conn = psycopg2.connect(database_url)
+                try:
+                    importer = BCScraperPGImporter(repo=biz_repo, conn=conn)
+                    return importer.run()
+                finally:
+                    conn.close()
 
-                importer = BCScraperPGImporter(
-                    repo=self.db.biz_repo, conn=conn
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, _run_import)
+                graph_stats = await loop.run_in_executor(
+                    None, biz_repo.get_stats
                 )
-                result = importer.run()
-                conn.close()
-                graph_stats = self.db.biz_repo.get_stats()
                 return JSONResponse(
                     {"import_result": result.to_dict(), "graph_stats": graph_stats}
                 )
