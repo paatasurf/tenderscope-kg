@@ -33,6 +33,7 @@ from .buyer_intelligence import BuyerIntelligenceEngine
 from .opportunity_intelligence import OpportunityIntelligenceEngine
 from .executive_decision import ExecutiveDecisionEngine
 from .importers import CSVImporter, JSONImporter, TenderScopeImporter
+from .server_engines import EngineSet, build_engines
 
 _TOOLS: list[Tool] = [
     Tool(
@@ -1366,20 +1367,26 @@ _TOOLS: list[Tool] = [
 
 
 class KGServer:
-    def __init__(self, repo_root: str, db_path: str):
+    def __init__(
+        self,
+        repo_root: str,
+        db_path: str,
+        engines: EngineSet | None = None,
+    ):
         self.repo_root = Path(repo_root).resolve()
         biz_repo = open_repository(Path(db_path))
         self.db = GraphDB(Path(db_path))
         self.db.biz_repo = biz_repo
         self.db.connect()
         self.engine = QueryEngine(self.db)
-        self.biz_engine = BizQueryEngine(biz_repo)
-        self.cie = CompanyIntelligenceEngine(biz_repo)
-        self.rie = RelationshipIntelligenceEngine(biz_repo)
-        self.cei = CompetitiveIntelligenceEngine(biz_repo)
-        self.bie = BuyerIntelligenceEngine(biz_repo)
-        self.oie = OpportunityIntelligenceEngine(biz_repo)
-        self.ede = ExecutiveDecisionEngine(biz_repo)
+        _engines = engines if engines is not None else build_engines(biz_repo)
+        self.biz_engine = _engines.biz
+        self.cie = _engines.cie
+        self.rie = _engines.rie
+        self.cei = _engines.cei
+        self.bie = _engines.bie
+        self.oie = _engines.oie
+        self.ede = _engines.ede
         self._server = Server("tenderscope-kg")
         self._register_handlers()
 
@@ -1791,6 +1798,18 @@ class KGServer:
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=500)
 
+        from .rest_server import create_rest_app
+        from .server_engines import EngineSet
+        rest_app = create_rest_app(EngineSet(
+            biz=self.biz_engine,
+            cie=self.cie,
+            rie=self.rie,
+            cei=self.cei,
+            bie=self.bie,
+            oie=self.oie,
+            ede=self.ede,
+        ))
+
         app = Starlette(
             routes=[
                 Route("/sse", endpoint=handle_sse),
@@ -1798,6 +1817,7 @@ class KGServer:
                 Route("/api/verify", endpoint=handle_verify),
                 Route("/api/import", endpoint=handle_import, methods=["POST"]),
                 Mount("/messages/", app=sse.handle_post_message),
+                Mount("/api/graph", app=rest_app),
             ]
         )
         config = uvicorn.Config(app, host=host, port=port, log_level="info")

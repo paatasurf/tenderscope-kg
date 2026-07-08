@@ -543,6 +543,35 @@ class BizRepositoryPG(BizRepository):
             rows = cur.fetchall()
         return [_row_to_entity(dict(r)) for r in rows]
 
+    def find_by_attribute(
+        self,
+        key: str,
+        value: object,
+        kind: Optional[BizEntityKind] = None,
+        limit: int = 10,
+    ) -> list[BizEntity]:
+        conn = self._get_conn()
+        clauses: list[str] = ["attributes @> %s::jsonb"]
+        params: list = [json.dumps({key: value})]
+        if kind is not None:
+            clauses.append("kind = %s")
+            params.append(kind.value)
+        params.append(limit)
+        where = "WHERE " + " AND ".join(clauses)
+        with self._cursor(conn) as cur:
+            cur.execute(
+                f"""
+                SELECT uid, kind, name, canonical_name, attributes,
+                       source, confidence, created_at, updated_at
+                FROM graph.biz_entities
+                {where}
+                LIMIT %s
+                """,
+                params,
+            )
+            rows = cur.fetchall()
+        return [_row_to_entity(dict(r)) for r in rows]
+
     # ── Read: full-text search ────────────────────────────────────────────────
 
     def search_fts(self, query: str, limit: int = 20) -> list[BizEntity]:

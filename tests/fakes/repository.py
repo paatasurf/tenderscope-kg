@@ -224,6 +224,21 @@ class FakeBizRepository(BizRepository):
         results.sort(key=lambda e: e.name)
         return results[offset: offset + limit]
 
+    def find_by_attribute(
+        self,
+        key: str,
+        value: object,
+        kind: Optional[BizEntityKind] = None,
+        limit: int = 10,
+    ) -> list[BizEntity]:
+        results = []
+        for e in self._entities.values():
+            if kind is not None and e.kind != kind:
+                continue
+            if e.attributes.get(key) == value:
+                results.append(e)
+        return results[:limit]
+
     def search_fts(self, query: str, limit: int = 20) -> list[BizEntity]:
         if not query or not query.strip():
             return []

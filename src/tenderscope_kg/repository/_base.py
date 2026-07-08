@@ -41,7 +41,10 @@ from abc import ABC, abstractmethod
 from contextlib import AbstractContextManager, contextmanager
 from typing import Optional
 
-from ..domain import BizEntity, BizEntityKind, BizRelation, BizRelationKind
+from ..domain import (
+    BizEntity, BizEntityKind, BizRelation, BizRelationKind, canonicalize,
+    CompanyIdentity, IdentityEvidence, EXTERNAL_ID_KEYS,
+)
 
 
 class BizRepository(ABC):
@@ -144,6 +147,91 @@ class BizRepository(ABC):
         Returns None if no match.
         """
 
+    def resolve_company_uid(
+        self,
+        name: str,
+        source: Optional[str] = None,
+        attributes: Optional[dict] = None,
+    ) -> BizEntity:
+        """
+        Resolve a company name to a canonical COMPANY entity.
+
+        Resolution order
+        ----------------
+        1. Exact (kind=COMPANY, canonical_name) lookup — fast path.
+        2. Exact (kind=COMPANY_ALIAS, canonical_name) lookup → follow
+           ALIAS_OF edge → return the canonical COMPANY.
+        3. Create a new COMPANY entity and return it.
+
+        This is the single entry point that ALL importers and future
+        dataset loaders must call when they only have a company name.
+        It guarantees:
+          - No duplicate COMPANY nodes are created for known aliases.
+          - Every relation is attached to the immutable canonical UID.
+          - Names are metadata; the UID is the permanent identity.
+
+        The returned entity is always kind=COMPANY (never COMPANY_ALIAS).
+        Callers must use entity.uid — never the name — when creating
+        relations.
+        """
+        canon = canonicalize(name)
+
+        # 1. Already a canonical COMPANY?
+        existing = self.find_by_canonical(BizEntityKind.COMPANY, canon)
+        if existing is not None:
+            return existing
+
+        # 2. A known alias? Resolve to canonical.
+        alias = self.find_by_canonical(BizEntityKind.COMPANY_ALIAS, canon)
+        if alias is not None:
+            resolved = self.resolve_alias(alias.uid)
+            if resolved is not None and resolved.kind == BizEntityKind.COMPANY:
+                return resolved
+
+        # 3. Genuinely unknown — create a new canonical COMPANY.
+        # write_history=True so every new company has a creation audit record.
+        entity, _ = self.put_entity(
+            kind=BizEntityKind.COMPANY,
+            name=name,
+            attributes=attributes or {},
+            source=source,
+            write_history=True,
+        )
+        return entity
+
+    def resolve_alias(self, uid: str) -> Optional[BizEntity]:
+        """
+        If uid belongs to a COMPANY_ALIAS entity, follow its ALIAS_OF edge
+        and return the canonical COMPANY entity.
+
+        If uid already belongs to a canonical entity (any kind other than
+        COMPANY_ALIAS), return that entity unchanged.
+
+        Returns None if uid is not found.
+
+        This is the platform-wide identity-resolution primitive.  All
+        importers and query engines must call this before creating any
+        business relation so that no edge ever points to a COMPANY_ALIAS
+        unless it is itself an ALIAS_OF edge.
+
+        Contract (all backends):
+          - O(1) or O(hops) — must not do a full-table scan.
+          - Idempotent: resolve_alias(canonical_uid) == get(canonical_uid).
+          - Chains of aliases (alias → alias → canonical) are fully resolved.
+        """
+        entity = self.get(uid)
+        if entity is None:
+            return None
+        if entity.kind != BizEntityKind.COMPANY_ALIAS:
+            return entity
+        neighbours = self.get_neighbors(
+            uid, direction="out",
+            kinds=[BizRelationKind.ALIAS_OF],
+        )
+        for _rel, neighbour in neighbours:
+            return self.resolve_alias(neighbour.uid)
+        return entity
+
     @abstractmethod
     def find(
         self,
@@ -156,6 +244,21 @@ class BizRepository(ABC):
         Filtered entity listing with pagination.
         name_like: substring match on canonical_name (case-insensitive).
         Results are ordered by name ascending.
+        """
+
+    @abstractmethod
+    def find_by_attribute(
+        self,
+        key: str,
+        value: object,
+        kind: Optional[BizEntityKind] = None,
+        limit: int = 10,
+    ) -> list[BizEntity]:
+        """
+        Return entities whose attributes JSONB contains {key: value}.
+
+        Used for external-ID lookups such as scraper_id → graph UID.
+        Results are not ordered (implementation-defined).
         """
 
     @abstractmethod
@@ -231,6 +334,140 @@ class BizRepository(ABC):
 
         Additional keys are implementation-defined.
         """
+
+    # ── Identity layer ─────────────────────────────────────────────────────────
+
+    def attach_identifier(
+        self,
+        company_uid: str,
+        id_key: str,
+        id_value: str,
+        source: Optional[str] = None,
+    ) -> BizEntity:
+        """
+        Attach an external identifier to a canonical COMPANY entity.
+
+        id_key must be one of the values in EXTERNAL_ID_KEYS (e.g.
+        'id_bc_registry', 'id_business_number', 'id_duns').  Using keys
+        from EXTERNAL_ID_KEYS ensures consistent naming across all importers.
+
+        The identifier is merged into the entity's attributes dict.  It is
+        pure metadata — it never changes company_uid or canonical_name.
+
+        Returns the updated entity.
+
+        Example
+        -------
+            repo.attach_identifier(
+                company_uid="CMP-00000001",
+                id_key=EXTERNAL_ID_KEYS["bc_registry"],
+                id_value="BC1234567",
+                source="bc_registry_importer",
+            )
+        """
+        entity = self.get(company_uid)
+        if entity is None:
+            raise KeyError(f"Company not found: {company_uid}")
+        if entity.kind != BizEntityKind.COMPANY:
+            raise ValueError(
+                f"{company_uid} is kind={entity.kind.value}, "
+                "attach_identifier only applies to COMPANY entities"
+            )
+        updated, _ = self.put_entity(
+            kind=BizEntityKind.COMPANY,
+            name=entity.name,
+            attributes={id_key: id_value},
+            source=source,
+            write_history=False,
+        )
+        return updated
+
+    def company_identity(self, company_uid: str) -> Optional[CompanyIdentity]:
+        """
+        Return a complete CompanyIdentity view for a canonical COMPANY.
+
+        Assembles: the canonical entity, all ALIAS_OF neighbours, all
+        external identifiers from attributes, and all SAME_AS neighbours.
+
+        Returns None if company_uid is not found or is not a COMPANY.
+
+        This is the primary read API for the identity layer.  Callers that
+        need to display, export, or compare a company's full identity record
+        should use this instead of assembling the pieces manually.
+        """
+        entity = self.get(company_uid)
+        if entity is None or entity.kind != BizEntityKind.COMPANY:
+            return None
+
+        # ── Collect aliases (COMPANY_ALIAS nodes pointing in via ALIAS_OF) ──
+        aliases: list[dict] = []
+        for rel, neighbour in self.get_neighbors(
+            company_uid, direction="in",
+            kinds=[BizRelationKind.ALIAS_OF],
+        ):
+            ev = IdentityEvidence.from_dict(rel.attributes) \
+                if rel.attributes else \
+                IdentityEvidence(
+                    confidence=rel.confidence,
+                    reason="alias_of",
+                    explanation=f"{neighbour.name} is an alias of {entity.name}",
+                )
+            aliases.append({
+                "uid":        neighbour.uid,
+                "name":       neighbour.name,
+                "confidence": ev.confidence,
+                "reason":     ev.reason,
+                "explanation":ev.explanation,
+                "evidence":   ev.evidence,
+                "source":     rel.source,
+            })
+
+        # ── Extract external identifiers from attributes ──────────────────
+        known_id_values = set(EXTERNAL_ID_KEYS.values())
+        external_ids = {
+            k: v for k, v in entity.attributes.items()
+            if k in known_id_values
+        }
+        other_attrs = {
+            k: v for k, v in entity.attributes.items()
+            if k not in known_id_values
+        }
+
+        # ── Collect SAME_AS merge candidates ─────────────────────────────
+        merge_candidates: list[dict] = []
+        for rel, neighbour in self.get_neighbors(
+            company_uid, direction="both",
+            kinds=[BizRelationKind.SAME_AS],
+        ):
+            if neighbour.kind != BizEntityKind.COMPANY:
+                continue
+            ev = IdentityEvidence.from_dict(rel.attributes) \
+                if rel.attributes else \
+                IdentityEvidence(
+                    confidence=rel.confidence,
+                    reason="same_as",
+                    explanation=f"{entity.name} may be the same company as {neighbour.name}",
+                )
+            merge_candidates.append({
+                "uid":        neighbour.uid,
+                "name":       neighbour.name,
+                "confidence": ev.confidence,
+                "reason":     ev.reason,
+                "explanation":ev.explanation,
+                "evidence":   ev.evidence,
+            })
+
+        return CompanyIdentity(
+            company_uid=entity.uid,
+            display_name=entity.name,
+            canonical_name=entity.canonical_name,
+            aliases=aliases,
+            external_ids=external_ids,
+            attributes=other_attrs,
+            merge_candidates=merge_candidates,
+            source=entity.source,
+            confidence=entity.confidence,
+        )
 
     # ── FTS maintenance ───────────────────────────────────────────────────────
 

@@ -26,6 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 dev      = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
 postgres = ["psycopg2-binary>=2.9"]  # kept for backward compat; also in core deps
+rest     = ["fastapi>=0.115.0", "uvicorn[standard]>=0.32.0"]
 
 [project.scripts]
 tkg = "tenderscope_kg.cli:main"

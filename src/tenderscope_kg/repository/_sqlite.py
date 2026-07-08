@@ -411,6 +411,26 @@ class BizRepositorySQLite(BizRepository):
         ).fetchall()
         return [_row_to_entity(r) for r in rows]
 
+    def find_by_attribute(
+        self,
+        key: str,
+        value: object,
+        kind: Optional[BizEntityKind] = None,
+        limit: int = 10,
+    ) -> list[BizEntity]:
+        clauses = ["json_extract(attributes, ?) = ?"]
+        params: list = [f"$.{key}", value]
+        if kind is not None:
+            clauses.append("kind = ?")
+            params.append(kind.value)
+        params.append(limit)
+        where = "WHERE " + " AND ".join(clauses)
+        rows = self._conn.execute(
+            f"SELECT * FROM biz_entities {where} LIMIT ?",
+            params,
+        ).fetchall()
+        return [_row_to_entity(r) for r in rows]
+
     def search_fts(self, query: str, limit: int = 20) -> list[BizEntity]:
         import re as _re
         words = [w for w in _re.split(r"[^\w]+", query.strip()) if w]

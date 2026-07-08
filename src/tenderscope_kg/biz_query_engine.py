@@ -59,6 +59,70 @@ class BizQueryEngine:
             return {"error": f"{uid} is a {e.kind.value}, not a company"}
         return self._rich_profile(e)
 
+    def company_by_id(self, company_id: str) -> dict:
+        """
+        Look up a company by either a graph UID or a legacy scraper integer ID.
+
+        Graph UID  (e.g. ``CMP-00000001``) — direct repository lookup.
+        Scraper ID (e.g. ``"1247"`` or ``1247``) — resolved via the
+        ``scraper_id`` attribute stored on every imported COMPANY entity.
+
+        Returns the same rich profile dict as ``company()``.
+        This is the single resolution point for both ID formats so that
+        transport layers need no branching logic of their own.
+        """
+        if isinstance(company_id, str) and company_id.upper().startswith("CMP-"):
+            return self.company(company_id)
+        try:
+            scraper_id = int(company_id)
+        except (ValueError, TypeError):
+            return {"error": f"Invalid company identifier: {company_id!r}"}
+        hits = self.repo.find_by_attribute("scraper_id", scraper_id, limit=1)
+        if not hits:
+            return {"error": f"Company with scraper_id={scraper_id} not found"}
+        e = hits[0]
+        resolved = self.repo.resolve_alias(e.uid) or e
+        return self._rich_profile(resolved)
+
+    def company_identity(self, uid: str) -> dict:
+        """
+        Full identity record for a canonical company.
+
+        Returns company_uid, display_name, canonical_name, all aliases with
+        confidence + evidence, all external identifiers (BC Registry, BN,
+        DUNS, LEI, LinkedIn, etc.), and any SAME_AS merge candidates.
+        """
+        identity = self.repo.company_identity(uid)
+        if identity is None:
+            return {"error": f"Canonical company not found: {uid}"}
+        return identity.to_dict()
+
+    def attach_identifier(
+        self,
+        company_uid: str,
+        id_key: str,
+        id_value: str,
+        source: Optional[str] = None,
+    ) -> dict:
+        """
+        Attach an external identifier to a canonical COMPANY entity.
+
+        id_key should be a value from EXTERNAL_ID_KEYS, e.g.:
+          'id_bc_registry', 'id_business_number', 'id_duns', 'id_lei'
+
+        Returns the updated entity summary.
+        """
+        try:
+            updated = self.repo.attach_identifier(
+                company_uid=company_uid,
+                id_key=id_key,
+                id_value=id_value,
+                source=source,
+            )
+            return {"ok": True, "entity": updated.to_summary()}
+        except (KeyError, ValueError) as exc:
+            return {"error": str(exc)}
+
     def tender(self, uid: str) -> dict:
         """Full tender record + bidders, awarding company, related project."""
         e = self.repo.get(uid)
@@ -92,12 +156,17 @@ class BizQueryEngine:
         kinds: Optional[list[str]] = None,
         limit: int = 20,
     ) -> dict:
-        """FTS + name-like search over business entities."""
+        """FTS + name-like search over business entities.
+
+        COMPANY_ALIAS hits are automatically resolved to their canonical
+        COMPANY entity so callers always receive primary nodes.
+        """
         fts_hits = self.repo.search_fts(query, limit=limit)
         like_hits = self.repo.find(name_like=query, limit=limit)
         seen: dict[str, BizEntity] = {}
         for e in fts_hits + like_hits:
-            seen[e.uid] = e
+            resolved = self.repo.resolve_alias(e.uid) or e
+            seen[resolved.uid] = resolved
         results = list(seen.values())[:limit]
         if kinds:
             kind_set = set(kinds)
@@ -109,11 +178,25 @@ class BizQueryEngine:
         }
 
     def find_companies(self, name: str, limit: int = 20) -> dict:
-        """Search for companies by name."""
+        """Search for companies by name.
+
+        Searches both COMPANY and COMPANY_ALIAS entities.  Alias hits are
+        resolved to their canonical COMPANY so the caller always receives
+        primary company nodes.  This means searching an alias name returns
+        the canonical company that owns that alias.
+        """
         hits = self.repo.find(kind=BizEntityKind.COMPANY, name_like=name, limit=limit)
+        alias_hits = self.repo.find(kind=BizEntityKind.COMPANY_ALIAS, name_like=name, limit=limit)
         fts = self.repo.search_fts(name, limit=limit)
-        fts = [e for e in fts if e.kind == BizEntityKind.COMPANY]
-        seen: dict[str, BizEntity] = {e.uid: e for e in hits + fts}
+        fts_companies = [
+            e for e in fts
+            if e.kind in (BizEntityKind.COMPANY, BizEntityKind.COMPANY_ALIAS)
+        ]
+        seen: dict[str, BizEntity] = {}
+        for e in hits + alias_hits + fts_companies:
+            resolved = self.repo.resolve_alias(e.uid) or e
+            if resolved.kind == BizEntityKind.COMPANY:
+                seen[resolved.uid] = resolved
         results = list(seen.values())[:limit]
         return {"query": name, "count": len(results), "results": [e.to_summary() for e in results]}
 
