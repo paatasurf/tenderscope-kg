@@ -48,9 +48,38 @@ UID_PREFIXES: dict[str, str] = {
     "equipment":    "EQP",
     "contract":     "CON",
     "permit":       "PRM",
+    "company_alias": "ALI",
 }
 
 PREFIX_TO_KIND: dict[str, str] = {v: k for k, v in UID_PREFIXES.items()}
+
+
+# ── External identifier keys ───────────────────────────────────────────────────
+# Canonical attribute key names for all known external identifiers attached to
+# a COMPANY entity.  Stored in BizEntity.attributes under these exact keys.
+# They are metadata — they never change company_uid.
+# Adding new identifiers later requires only adding a key here: no schema
+# change, no migration, no UID change.
+EXTERNAL_ID_KEYS: dict[str, str] = {
+    # Canadian government
+    "bc_registry":          "id_bc_registry",
+    "business_number":      "id_business_number",
+    "gst_number":           "id_gst_number",
+    "cra_number":           "id_cra_number",
+    "pspc_vendor":          "id_pspc_vendor",
+    # International / financial
+    "duns":                 "id_duns",
+    "lei":                  "id_lei",
+    # Web / digital presence
+    "website":              "id_website",
+    "domain":               "id_domain",
+    "linkedin_company":     "id_linkedin_company",
+    "twitter":              "id_twitter",
+    "facebook":             "id_facebook",
+    # TenderScope-internal cross-references
+    "scraper_id":           "scraper_id",
+    "canonical_company_id": "canonical_company_id",
+}
 
 
 class BizEntityKind(str, Enum):
@@ -72,6 +101,7 @@ class BizEntityKind(str, Enum):
     EQUIPMENT    = "equipment"
     CONTRACT     = "contract"
     PERMIT       = "permit"
+    COMPANY_ALIAS = "company_alias"
 
 
 class BizRelationKind(str, Enum):
@@ -137,6 +167,14 @@ class BizRelationKind(str, Enum):
 
     # Participation (bid, application, etc.)
     PARTICIPATED_IN  = "participated_in"
+
+    # Identity resolution
+    ALIAS_OF         = "alias_of"
+    # Confidence-scored merge candidate: two COMPANY nodes believed to be the
+    # same real company.  attributes must include 'confidence', 'reason', and
+    # 'evidence' (list of dicts).  A SAME_AS edge is bidirectional by
+    # convention — create both directions or treat as undirected.
+    SAME_AS          = "same_as"
 
     # Code-graph bridge (code entity references a business entity)
     CODE_REFERENCES  = "code_references"

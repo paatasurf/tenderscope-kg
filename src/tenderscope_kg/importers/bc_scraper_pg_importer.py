@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Any, Optional
 
-from ..domain import BizEntityKind, BizRelationKind
+from ..domain import BizEntityKind, BizRelationKind, IdentityEvidence, EXTERNAL_ID_KEYS
 from ..domain.results import ImportResult
 from ..repository._base import BizRepository
 from .base import BaseImporter
@@ -153,99 +153,228 @@ class BCScraperPGImporter(BaseImporter):
 
     def _import_companies(self) -> ImportResult:
         """
-        Import public.companies where entity_role = 'canonical'.
-        Alias rows (entity_role = 'applicant_alias') are linked via RELATED_TO
-        pointing to their canonical.
+        Two-pass import of public.companies.
+
+        Pass 1 — canonical rows (entity_role = 'canonical' or NULL):
+            Inserted as BizEntityKind.COMPANY.  These are the permanent
+            identity nodes for the entire platform.
+
+        Pass 2 — alias rows (entity_role = 'applicant_alias'):
+            Inserted as BizEntityKind.COMPANY_ALIAS.
+            Each alias gets a single ALIAS_OF edge → its canonical COMPANY.
+            Aliases are NOT primary company nodes and will not appear in
+            company listings or be used as relation targets.
+
+        After both passes, self._company_id_to_uid maps every scraper id
+        (canonical AND alias) to the canonical COMPANY uid.  All downstream
+        steps (permits, contracts, tenders) therefore always attach to the
+        canonical node, never to an alias.
         """
         result = ImportResult(importer=f"{self.name}:companies")
-        cur = self._conn.cursor()
 
-        # Map from scraper company id → graph UID for later relation steps
+        _QUERY = """
+            SELECT
+                id,
+                COALESCE(NULLIF(display_name, ''), name, '') AS display_name,
+                name,
+                entity_role,
+                canonical_company_id,
+                construction_score,
+                total_projects,
+                total_award_value,
+                award_count,
+                primary_city,
+                primary_province,
+                google_address,
+                google_phone,
+                primary_trade,
+                dominant_sector
+            FROM public.companies
+            ORDER BY id
+        """
+
+        # ── shared attribute builder ───────────────────────────────────────
+        def _build_attrs(
+            db_id, entity_role, canonical_company_id,
+            construction_score, total_projects, total_award_value,
+            award_count, primary_city, primary_province,
+            google_address, google_phone, primary_trade, dominant_sector,
+        ) -> dict:
+            attrs: dict = {"scraper_id": db_id}
+            if _s(entity_role):
+                attrs["entity_role"] = _s(entity_role)
+            if canonical_company_id:
+                attrs["canonical_company_id"] = canonical_company_id
+            if construction_score is not None:
+                attrs["construction_score"] = construction_score
+            if total_projects:
+                attrs["total_projects"] = total_projects
+            if total_award_value:
+                attrs["total_award_value"] = total_award_value
+            if award_count:
+                attrs["award_count"] = award_count
+            for k, v in [
+                ("city", primary_city), ("province", primary_province),
+                ("address", google_address), ("phone", google_phone),
+                ("primary_trade", primary_trade), ("dominant_sector", dominant_sector),
+            ]:
+                if _s(v):
+                    attrs[k] = _s(v)
+            return attrs
+
+        # ── Pass 1: canonical companies ────────────────────────────────────
+        # self._company_id_to_uid maps scraper id → canonical COMPANY uid.
+        # Populated here for canonicals; updated in Pass 2 to point aliases
+        # at the same canonical uid.
         self._company_id_to_uid: dict[int, str] = {}
+        # Temporary: scraper canonical_id → graph uid (for alias resolution)
+        _canonical_scraper_id_to_uid: dict[int, str] = {}
 
+        cur = self._conn.cursor()
         try:
-            cur.execute("""
-                SELECT
-                    id,
-                    COALESCE(NULLIF(display_name, ''), name, '') AS display_name,
-                    name,
-                    entity_role,
-                    canonical_company_id,
-                    construction_score,
-                    total_projects,
-                    total_award_value,
-                    award_count,
-                    primary_city,
-                    primary_province,
-                    google_address,
-                    google_phone,
-                    primary_trade,
-                    dominant_sector
-                FROM public.companies
-                ORDER BY id
-            """)
+            cur.execute(_QUERY)
+            all_rows = []
             while True:
-                rows = cur.fetchmany(self._batch_size)
-                if not rows:
+                batch = cur.fetchmany(self._batch_size)
+                if not batch:
                     break
-                for row in rows:
-                    (
-                        db_id, display_name, raw_name, entity_role,
-                        canonical_company_id, construction_score,
-                        total_projects, total_award_value, award_count,
-                        primary_city, primary_province,
-                        google_address, google_phone,
-                        primary_trade, dominant_sector,
-                    ) = row
-
-                    name = _s(display_name) or _s(raw_name)
-                    if not name:
-                        result.warnings.append(f"companies.id={db_id}: empty name, skipping")
-                        continue
-
-                    attrs: dict = {"scraper_id": db_id}
-                    if _s(entity_role):
-                        attrs["entity_role"] = _s(entity_role)
-                    if canonical_company_id:
-                        attrs["canonical_company_id"] = canonical_company_id
-                    if construction_score is not None:
-                        attrs["construction_score"] = construction_score
-                    if total_projects:
-                        attrs["total_projects"] = total_projects
-                    if total_award_value:
-                        attrs["total_award_value"] = total_award_value
-                    if award_count:
-                        attrs["award_count"] = award_count
-                    for k, v in [
-                        ("city", primary_city), ("province", primary_province),
-                        ("address", google_address), ("phone", google_phone),
-                        ("primary_trade", primary_trade), ("dominant_sector", dominant_sector),
-                    ]:
-                        if _s(v):
-                            attrs[k] = _s(v)
-
-                    try:
-                        entity, created = self.repo.put_entity(
-                            kind=BizEntityKind.COMPANY,
-                            name=name,
-                            attributes=attrs,
-                            source=_SOURCE,
-                            write_history=False,
-                        )
-                        self._company_id_to_uid[db_id] = entity.uid
-                        if created:
-                            result.entities_created += 1
-                        else:
-                            result.entities_updated += 1
-                    except Exception as exc:
-                        result.errors.append(f"companies.id={db_id}: {exc}")
-
+                all_rows.extend(batch)
         finally:
             cur.close()
 
+        for row in all_rows:
+            (
+                db_id, display_name, raw_name, entity_role,
+                canonical_company_id, construction_score,
+                total_projects, total_award_value, award_count,
+                primary_city, primary_province,
+                google_address, google_phone,
+                primary_trade, dominant_sector,
+            ) = row
+
+            if _s(entity_role) == "applicant_alias":
+                continue  # handled in Pass 2
+
+            name = _s(display_name) or _s(raw_name)
+            if not name:
+                result.warnings.append(f"companies.id={db_id}: empty name, skipping")
+                continue
+
+            attrs = _build_attrs(
+                db_id, entity_role, canonical_company_id,
+                construction_score, total_projects, total_award_value,
+                award_count, primary_city, primary_province,
+                google_address, google_phone, primary_trade, dominant_sector,
+            )
+
+            try:
+                entity, created = self.repo.put_entity(
+                    kind=BizEntityKind.COMPANY,
+                    name=name,
+                    attributes=attrs,
+                    source=_SOURCE,
+                    write_history=False,
+                )
+                self._company_id_to_uid[db_id] = entity.uid
+                _canonical_scraper_id_to_uid[db_id] = entity.uid
+                if created:
+                    result.entities_created += 1
+                else:
+                    result.entities_updated += 1
+            except Exception as exc:
+                result.errors.append(f"companies.id={db_id} (canonical): {exc}")
+
+        # ── Pass 2: alias companies ────────────────────────────────────────
+        for row in all_rows:
+            (
+                db_id, display_name, raw_name, entity_role,
+                canonical_company_id, construction_score,
+                total_projects, total_award_value, award_count,
+                primary_city, primary_province,
+                google_address, google_phone,
+                primary_trade, dominant_sector,
+            ) = row
+
+            if _s(entity_role) != "applicant_alias":
+                continue
+
+            name = _s(display_name) or _s(raw_name)
+            if not name:
+                result.warnings.append(f"companies.id={db_id} (alias): empty name, skipping")
+                continue
+
+            # Resolve which canonical COMPANY this alias points at.
+            canonical_uid: str | None = None
+            if canonical_company_id and canonical_company_id in _canonical_scraper_id_to_uid:
+                canonical_uid = _canonical_scraper_id_to_uid[canonical_company_id]
+            else:
+                result.warnings.append(
+                    f"companies.id={db_id} (alias): "
+                    f"canonical_company_id={canonical_company_id} not found in graph, skipping"
+                )
+                continue
+
+            attrs = _build_attrs(
+                db_id, entity_role, canonical_company_id,
+                construction_score, total_projects, total_award_value,
+                award_count, primary_city, primary_province,
+                google_address, google_phone, primary_trade, dominant_sector,
+            )
+            attrs["alias_for_uid"] = canonical_uid
+
+            try:
+                alias_entity, created = self.repo.put_entity(
+                    kind=BizEntityKind.COMPANY_ALIAS,
+                    name=name,
+                    attributes=attrs,
+                    source=_SOURCE,
+                    write_history=False,
+                )
+                # ALIAS_OF edge: alias → canonical COMPANY.
+                # Carry a structured IdentityEvidence payload so every
+                # alias match decision is auditable and reversible.
+                _ev = IdentityEvidence(
+                    confidence=1.0,
+                    reason="canonical_id_match",
+                    explanation=(
+                        f"'{name}' is a registered alias of canonical "
+                        f"company_id={canonical_company_id} "
+                        f"(graph uid={canonical_uid}) "
+                        f"per public.companies.canonical_company_id"
+                    ),
+                    evidence=[{
+                        "field":  "canonical_company_id",
+                        "value":  canonical_company_id,
+                        "source": _SOURCE,
+                    }],
+                    source=_SOURCE,
+                )
+                self.repo.put_relation(
+                    source_uid=alias_entity.uid,
+                    kind=BizRelationKind.ALIAS_OF,
+                    target_uid=canonical_uid,
+                    source=_SOURCE,
+                    confidence=1.0,
+                    attributes=_ev.to_dict(),
+                )
+                # Map alias scraper id → canonical uid so downstream steps
+                # (permits, contracts, etc.) always attach to the canonical node.
+                self._company_id_to_uid[db_id] = canonical_uid
+                if created:
+                    result.entities_created += 1
+                else:
+                    result.entities_updated += 1
+                result.relations_created += 1
+            except Exception as exc:
+                result.errors.append(f"companies.id={db_id} (alias): {exc}")
+
         logger.info(
-            "companies: created=%d updated=%d errors=%d",
-            result.entities_created, result.entities_updated, len(result.errors),
+            "companies: canonical=%d aliases=%d errors=%d",
+            len(_canonical_scraper_id_to_uid),
+            sum(1 for v in self._company_id_to_uid.values()
+                if v not in _canonical_scraper_id_to_uid.values()
+                or len([k for k, u in self._company_id_to_uid.items() if u == v]) > 1),
+            len(result.errors),
         )
         return result
 
@@ -488,15 +617,16 @@ class BCScraperPGImporter(BaseImporter):
                             else:
                                 result.relations_updated += 1
 
-                        # Winner company name entity (may differ from canonical)
+                        # Resolve winner company name → canonical UID.
+                        # resolve_company_uid() is the single safe entry point:
+                        # it checks COMPANY, then COMPANY_ALIAS, then creates
+                        # a new COMPANY only if the name is genuinely unknown.
                         winner_name = _s(winner_company)
                         if winner_name:
-                            winner_e, _ = self.repo.put_entity(
-                                kind=BizEntityKind.COMPANY,
-                                name=winner_name,
-                                attributes={"source_table": "contract_awards"},
+                            winner_e = self.repo.resolve_company_uid(
+                                winner_name,
                                 source=_SOURCE,
-                                write_history=False,
+                                attributes={"source_table": "contract_awards"},
                             )
                             _, rc2 = self.repo.put_relation(
                                 source_uid=contract_e.uid,

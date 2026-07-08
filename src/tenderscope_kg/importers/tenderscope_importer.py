@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from ..domain import BizEntityKind, BizRelationKind
+from ..domain import BizEntityKind, BizRelationKind, canonicalize
 from ..domain.results import ImportResult
 from ..repository._base import BizRepository
 from .base import BaseImporter
@@ -204,12 +204,15 @@ class TenderScopeImporter(BaseImporter):
                 }.items() if v
             }
             try:
-                entity, created = self.repo.put_entity(
-                    kind=BizEntityKind.COMPANY,
-                    name=name,
-                    attributes=attrs,
-                    source=self.source_tag,
+                existing = self.repo.find_by_canonical(
+                    BizEntityKind.COMPANY, canonicalize(name)
                 )
+                entity = self.repo.resolve_company_uid(
+                    name,
+                    source=self.source_tag,
+                    attributes=attrs,
+                )
+                created = existing is None
                 if created:
                     result.entities_created += 1
                 else:
@@ -282,12 +285,12 @@ class TenderScopeImporter(BaseImporter):
                 else:
                     result.entities_updated += 1
 
-                # Link applicant as a company if present
+                # Link applicant as a company if present.
+                # resolve_company_uid() ensures we attach to the canonical UID.
                 applicant = _first_val(row, _PERMIT_COLS["applicant"])
                 if applicant:
-                    company_e, _ = self.repo.put_entity(
-                        kind=BizEntityKind.COMPANY,
-                        name=applicant,
+                    company_e = self.repo.resolve_company_uid(
+                        applicant,
                         source=self.source_tag,
                     )
                     _, rc = self.repo.put_relation(
@@ -325,11 +328,15 @@ class TenderScopeImporter(BaseImporter):
                     name=tender_name,
                     source=self.source_tag,
                 )
-                company_e, cc = self.repo.put_entity(
-                    kind=BizEntityKind.COMPANY,
-                    name=company_name,
+                # resolve_company_uid() — name → canonical UID, alias-aware.
+                _existing_co = self.repo.find_by_canonical(
+                    BizEntityKind.COMPANY, canonicalize(company_name)
+                )
+                company_e = self.repo.resolve_company_uid(
+                    company_name,
                     source=self.source_tag,
                 )
+                cc = _existing_co is None
                 result.entities_created += int(tc) + int(cc)
                 result.entities_updated += int(not tc) + int(not cc)
 
