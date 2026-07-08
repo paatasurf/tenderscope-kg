@@ -40,7 +40,7 @@ class BizEntity:
     updated_at: Optional[str] = None         # ISO 8601
 
     def to_summary(self) -> dict:
-        return {
+        d: dict = {
             "uid": self.uid,
             "kind": self.kind.value if hasattr(self.kind, "value") else self.kind,
             "name": self.name,
@@ -48,6 +48,9 @@ class BizEntity:
             "source": self.source,
             "confidence": self.confidence,
         }
+        if self.attributes.get("scraper_id") is not None:
+            d["scraper_id"] = self.attributes["scraper_id"]
+        return d
 
     def to_full(self) -> dict:
         return {
