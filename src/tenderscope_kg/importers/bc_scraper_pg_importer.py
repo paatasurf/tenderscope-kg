@@ -27,6 +27,8 @@ import logging
 import time
 from typing import Any, Optional
 
+import psycopg2
+
 from ..domain import BizEntityKind, BizRelationKind, IdentityEvidence, EXTERNAL_ID_KEYS
 from ..domain.kinds import canonicalize
 from ..domain.results import ImportResult
@@ -59,9 +61,13 @@ class BCScraperPGImporter(BaseImporter):
 
     Args:
         repo:           Target graph repository (must be initialised).
-        conn:           psycopg2 connection to the shared Railway DB.
-                        The connection is used read-only; no writes are made
-                        to public.* tables.
+        conn:           psycopg2 connection OR a DSN string for the shared
+                        Railway DB.  When a DSN string is provided (preferred),
+                        each import stage opens and closes its own fresh
+                        connection, preventing Railway proxy SSL timeouts on
+                        long-running migrations.  When a live connection object
+                        is provided (legacy / test usage), it is used directly
+                        as before — no per-stage reconnection.
         batch_size:     Rows fetched per cursor iteration (memory control).
         uid_snapshot:   Optional mapping of (kind_str, canonical_name_str) ->
                         uid_str captured before a re-import truncation.  When
@@ -81,9 +87,43 @@ class BCScraperPGImporter(BaseImporter):
         uid_snapshot: Optional[dict[tuple[str, str], str]] = None,
     ) -> None:
         super().__init__(repo, source_tag=_SOURCE)
-        self._conn = conn
+        # Accept either a DSN string (preferred — enables per-stage reconnect)
+        # or a live psycopg2 connection (legacy / unit-test usage).
+        if isinstance(conn, str):
+            self._dsn: Optional[str] = conn
+            self._conn: Any = None          # not used when DSN is set
+        else:
+            self._dsn = None
+            self._conn = conn
         self._batch_size = batch_size
         self._uid_snapshot: dict[tuple[str, str], str] = uid_snapshot or {}
+
+    def _get_source_conn(self) -> Any:
+        """Open a fresh source connection.
+
+        When a DSN string was supplied, a brand-new psycopg2 connection is
+        created on every call.  The caller is responsible for closing it
+        (always in a finally block).
+
+        When a legacy connection object was supplied (unit tests, external
+        callers), that object is returned as-is — closing is the caller's
+        responsibility as before.
+        """
+        if self._dsn is not None:
+            return psycopg2.connect(self._dsn)
+        return self._conn
+
+    def _close_source_conn(self, conn: Any) -> None:
+        """Close a source connection only when it was opened by _get_source_conn.
+
+        Legacy connection objects (self._dsn is None) are NOT closed here;
+        their lifetime is managed externally.
+        """
+        if self._dsn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     # ── Public entry point ────────────────────────────────────────────────
 
@@ -143,20 +183,24 @@ class BCScraperPGImporter(BaseImporter):
 
     def _verify_access(self) -> dict:
         """Return row counts from public.* tables; raise on connection failure."""
-        cur = self._conn.cursor()
+        conn = self._get_source_conn()
         try:
-            counts: dict = {}
-            for table in ("companies", "tenders", "permits", "contract_awards",
-                          "commercial_tenders", "arch_tenders"):
-                try:
-                    cur.execute(f"SELECT COUNT(*) FROM public.{table}")  # noqa: S608
-                    counts[table] = cur.fetchone()[0]
-                except Exception as exc:
-                    counts[table] = f"ERROR: {exc}"
-                    self._conn.rollback()
-            return counts
+            cur = conn.cursor()
+            try:
+                counts: dict = {}
+                for table in ("companies", "tenders", "permits", "contract_awards",
+                              "commercial_tenders", "arch_tenders"):
+                    try:
+                        cur.execute(f"SELECT COUNT(*) FROM public.{table}")  # noqa: S608
+                        counts[table] = cur.fetchone()[0]
+                    except Exception as exc:
+                        counts[table] = f"ERROR: {exc}"
+                        conn.rollback()
+                return counts
+            finally:
+                cur.close()
         finally:
-            cur.close()
+            self._close_source_conn(conn)
 
     # ── Companies ─────────────────────────────────────────────────────────
 
@@ -239,17 +283,21 @@ class BCScraperPGImporter(BaseImporter):
         # Temporary: scraper canonical_id → graph uid (for alias resolution)
         _canonical_scraper_id_to_uid: dict[int, str] = {}
 
-        cur = self._conn.cursor()
+        conn = self._get_source_conn()
         try:
-            cur.execute(_QUERY)
-            all_rows = []
-            while True:
-                batch = cur.fetchmany(self._batch_size)
-                if not batch:
-                    break
-                all_rows.extend(batch)
+            cur = conn.cursor()
+            try:
+                cur.execute(_QUERY)
+                all_rows = []
+                while True:
+                    batch = cur.fetchmany(self._batch_size)
+                    if not batch:
+                        break
+                    all_rows.extend(batch)
+            finally:
+                cur.close()
         finally:
-            cur.close()
+            self._close_source_conn(conn)
 
         for row in all_rows:
             (
@@ -423,9 +471,11 @@ class BCScraperPGImporter(BaseImporter):
             """),
         ]
 
-        cur = self._conn.cursor()
+        conn = self._get_source_conn()
         try:
-            for table, query in queries:
+            cur = conn.cursor()
+            try:
+              for table, query in queries:
                 cur.execute(query)
                 while True:
                     rows = cur.fetchmany(self._batch_size)
@@ -466,8 +516,10 @@ class BCScraperPGImporter(BaseImporter):
                                 result.entities_updated += 1
                         except Exception as exc:
                             result.errors.append(f"{table}.id={db_id}: {exc}")
+            finally:
+                cur.close()
         finally:
-            cur.close()
+            self._close_source_conn(conn)
 
         logger.info(
             "tenders: created=%d updated=%d errors=%d",
@@ -486,28 +538,32 @@ class BCScraperPGImporter(BaseImporter):
         Processed in batches of _PERMIT_TX_SIZE to bound transaction size.
         """
         result = ImportResult(importer=f"{self.name}:permits")
-        cur = self._conn.cursor()
+        conn = self._get_source_conn()
         try:
-            cur.execute("""
-                SELECT id, external_id, address, city, permit_type,
-                       project_value, applicant, contractor,
-                       lifecycle_status, source, company_id
-                FROM public.permits
-                ORDER BY id
-            """)
-            batch: list = []
-            while True:
-                rows = cur.fetchmany(self._batch_size)
-                if not rows:
-                    if batch:
+            cur = conn.cursor()
+            try:
+                cur.execute("""
+                    SELECT id, external_id, address, city, permit_type,
+                           project_value, applicant, contractor,
+                           lifecycle_status, source, company_id
+                    FROM public.permits
+                    ORDER BY id
+                """)
+                batch: list = []
+                while True:
+                    rows = cur.fetchmany(self._batch_size)
+                    if not rows:
+                        if batch:
+                            self._process_permit_batch(batch, result)
+                        break
+                    batch.extend(rows)
+                    if len(batch) >= self._PERMIT_TX_SIZE:
                         self._process_permit_batch(batch, result)
-                    break
-                batch.extend(rows)
-                if len(batch) >= self._PERMIT_TX_SIZE:
-                    self._process_permit_batch(batch, result)
-                    batch = []
+                        batch = []
+            finally:
+                cur.close()
         finally:
-            cur.close()
+            self._close_source_conn(conn)
 
         logger.info(
             "permits: created=%d updated=%d rels_created=%d errors=%d",
@@ -576,90 +632,94 @@ class BCScraperPGImporter(BaseImporter):
           contract          --AWARDED_TO--> winner company entity
         """
         result = ImportResult(importer=f"{self.name}:contract_awards")
-        cur = self._conn.cursor()
+        conn = self._get_source_conn()
         try:
-            cur.execute("""
-                SELECT id, external_id, title, winner_company, award_value,
-                       currency, award_date, buyer_organization,
-                       procurement_category, source, company_id
-                FROM public.contract_awards
-                ORDER BY id
-            """)
-            while True:
-                rows = cur.fetchmany(self._batch_size)
-                if not rows:
-                    break
-                for row in rows:
-                    (db_id, external_id, title, winner_company, award_value,
-                     currency, award_date, buyer_org, proc_category,
-                     src, company_id) = row
+            cur = conn.cursor()
+            try:
+                cur.execute("""
+                    SELECT id, external_id, title, winner_company, award_value,
+                           currency, award_date, buyer_organization,
+                           procurement_category, source, company_id
+                    FROM public.contract_awards
+                    ORDER BY id
+                """)
+                while True:
+                    rows = cur.fetchmany(self._batch_size)
+                    if not rows:
+                        break
+                    for row in rows:
+                        (db_id, external_id, title, winner_company, award_value,
+                         currency, award_date, buyer_org, proc_category,
+                         src, company_id) = row
 
-                    name = _s(title) or _s(external_id) or f"award-{db_id}"
-                    attrs: dict = {"scraper_id": db_id}
-                    for k, v in [
-                        ("external_id", external_id), ("winner_company", winner_company),
-                        ("award_value", award_value), ("currency", currency),
-                        ("award_date", award_date), ("buyer_organization", buyer_org),
-                        ("procurement_category", proc_category), ("source", src),
-                    ]:
-                        if _s(str(v) if v is not None else ""):
-                            attrs[k] = v if isinstance(v, (int, float)) else _s(v)
+                        name = _s(title) or _s(external_id) or f"award-{db_id}"
+                        attrs: dict = {"scraper_id": db_id}
+                        for k, v in [
+                            ("external_id", external_id), ("winner_company", winner_company),
+                            ("award_value", award_value), ("currency", currency),
+                            ("award_date", award_date), ("buyer_organization", buyer_org),
+                            ("procurement_category", proc_category), ("source", src),
+                        ]:
+                            if _s(str(v) if v is not None else ""):
+                                attrs[k] = v if isinstance(v, (int, float)) else _s(v)
 
-                    try:
-                        contract_e, created = self.repo.put_entity(
-                            kind=BizEntityKind.CONTRACT,
-                            name=name,
-                            attributes=attrs,
-                            source=_SOURCE,
-                            write_history=False,
-                        )
-                        if created:
-                            result.entities_created += 1
-                        else:
-                            result.entities_updated += 1
-
-                        # Canonical company → contract
-                        if company_id and company_id in self._company_id_to_uid:
-                            cmp_uid = self._company_id_to_uid[company_id]
-                            _, rc = self.repo.put_relation(
-                                source_uid=cmp_uid,
-                                kind=BizRelationKind.AWARDED_TO,
-                                target_uid=contract_e.uid,
+                        try:
+                            contract_e, created = self.repo.put_entity(
+                                kind=BizEntityKind.CONTRACT,
+                                name=name,
+                                attributes=attrs,
                                 source=_SOURCE,
-                                attributes={"award_date": _s(award_date),
-                                            "award_value": award_value},
+                                write_history=False,
                             )
-                            if rc:
-                                result.relations_created += 1
+                            if created:
+                                result.entities_created += 1
                             else:
-                                result.relations_updated += 1
+                                result.entities_updated += 1
 
-                        # Resolve winner company name → canonical UID.
-                        # resolve_company_uid() is the single safe entry point:
-                        # it checks COMPANY, then COMPANY_ALIAS, then creates
-                        # a new COMPANY only if the name is genuinely unknown.
-                        winner_name = _s(winner_company)
-                        if winner_name:
-                            winner_e = self.repo.resolve_company_uid(
-                                winner_name,
-                                source=_SOURCE,
-                                attributes={"source_table": "contract_awards"},
-                            )
-                            _, rc2 = self.repo.put_relation(
-                                source_uid=contract_e.uid,
-                                kind=BizRelationKind.AWARDED_TO,
-                                target_uid=winner_e.uid,
-                                source=_SOURCE,
-                            )
-                            if rc2:
-                                result.relations_created += 1
-                            else:
-                                result.relations_updated += 1
+                            # Canonical company → contract
+                            if company_id and company_id in self._company_id_to_uid:
+                                cmp_uid = self._company_id_to_uid[company_id]
+                                _, rc = self.repo.put_relation(
+                                    source_uid=cmp_uid,
+                                    kind=BizRelationKind.AWARDED_TO,
+                                    target_uid=contract_e.uid,
+                                    source=_SOURCE,
+                                    attributes={"award_date": _s(award_date),
+                                                "award_value": award_value},
+                                )
+                                if rc:
+                                    result.relations_created += 1
+                                else:
+                                    result.relations_updated += 1
 
-                    except Exception as exc:
-                        result.errors.append(f"contract_awards.id={db_id}: {exc}")
+                            # Resolve winner company name → canonical UID.
+                            # resolve_company_uid() is the single safe entry point:
+                            # it checks COMPANY, then COMPANY_ALIAS, then creates
+                            # a new COMPANY only if the name is genuinely unknown.
+                            winner_name = _s(winner_company)
+                            if winner_name:
+                                winner_e = self.repo.resolve_company_uid(
+                                    winner_name,
+                                    source=_SOURCE,
+                                    attributes={"source_table": "contract_awards"},
+                                )
+                                _, rc2 = self.repo.put_relation(
+                                    source_uid=contract_e.uid,
+                                    kind=BizRelationKind.AWARDED_TO,
+                                    target_uid=winner_e.uid,
+                                    source=_SOURCE,
+                                )
+                                if rc2:
+                                    result.relations_created += 1
+                                else:
+                                    result.relations_updated += 1
+
+                        except Exception as exc:
+                            result.errors.append(f"contract_awards.id={db_id}: {exc}")
+            finally:
+                cur.close()
         finally:
-            cur.close()
+            self._close_source_conn(conn)
 
         logger.info(
             "contract_awards: created=%d updated=%d rels_created=%d errors=%d",
@@ -676,21 +736,25 @@ class BCScraperPGImporter(BaseImporter):
         entities with ISSUES→TENDER relations.
         """
         result = ImportResult(importer=f"{self.name}:organizations")
-        cur = self._conn.cursor()
+        conn = self._get_source_conn()
         try:
-            cur.execute("""
-                SELECT DISTINCT organization FROM public.tenders
-                WHERE organization IS NOT NULL AND organization <> ''
-                UNION
-                SELECT DISTINCT company FROM public.commercial_tenders
-                WHERE company IS NOT NULL AND company <> ''
-                UNION
-                SELECT DISTINCT company FROM public.arch_tenders
-                WHERE company IS NOT NULL AND company <> ''
-            """)
-            orgs = [r[0] for r in cur.fetchall() if r[0]]
+            cur = conn.cursor()
+            try:
+                cur.execute("""
+                    SELECT DISTINCT organization FROM public.tenders
+                    WHERE organization IS NOT NULL AND organization <> ''
+                    UNION
+                    SELECT DISTINCT company FROM public.commercial_tenders
+                    WHERE company IS NOT NULL AND company <> ''
+                    UNION
+                    SELECT DISTINCT company FROM public.arch_tenders
+                    WHERE company IS NOT NULL AND company <> ''
+                """)
+                orgs = [r[0] for r in cur.fetchall() if r[0]]
+            finally:
+                cur.close()
         finally:
-            cur.close()
+            self._close_source_conn(conn)
 
         for org_name in orgs:
             name = _s(org_name)

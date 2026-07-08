@@ -375,17 +375,15 @@ def main() -> int:
     for k, n in sorted(snapshot_by_kind.items(), key=lambda x: -x[1]):
         print(f"    {k:<20}: {n:>8,}")
 
-    # ── open source connection ────────────────────────────────────────────────
-    try:
-        src_conn = psycopg2.connect(database_url)
-    except Exception as exc:
-        return fail(f"Cannot connect to source database: {exc}")
-
-    # Verify source table access and build importer with snapshot
+    # ── build importer — pass DSN string for per-stage reconnection ──────────
+    # BCScraperPGImporter detects a string and opens a fresh psycopg2
+    # connection for each import stage, closing it immediately after.
+    # This prevents Railway's SSL proxy from dropping a long-lived connection
+    # mid-migration (the previous failure mode after ~23 minutes).
     try:
         importer = BCScraperPGImporter(
             repo=repo,
-            conn=src_conn,
+            conn=database_url,
             uid_snapshot=uid_snapshot,
         )
         access = importer.verify_access()
@@ -398,7 +396,6 @@ def main() -> int:
 
     if dry_run:
         _dry_run_uid_report(database_url, uid_snapshot)
-        src_conn.close()
         print("\n  [DRY-RUN] Exiting without changes.")
         return 0
 
@@ -480,8 +477,6 @@ def main() -> int:
     for kind in ("company", "company_alias", "tender", "permit", "contract",
                  "organization"):
         print(f"    {kind:<18}: {by_kind_after.get(kind, 0)}")
-
-    src_conn.close()
 
     n_errors = len(result.errors)
     if n_errors:
