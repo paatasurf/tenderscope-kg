@@ -1373,13 +1373,37 @@ class KGServer:
         db_path: str,
         engines: EngineSet | None = None,
     ):
+        import os
+        import time
+        _t0 = time.perf_counter()
+        def _log(msg: str) -> None:
+            elapsed = int((time.perf_counter() - _t0) * 1000)
+            click.echo(f"[startup +{elapsed:>5}ms] {msg}", err=True)
+
+        _log(f"KGServer.__init__ started  repo={repo_root!r}  db={db_path!r}")
+        _log(f"DATABASE_URL={'SET' if os.environ.get('DATABASE_URL') else 'NOT SET (SQLite fallback)'}")
+
         self.repo_root = Path(repo_root).resolve()
-        biz_repo = open_repository(Path(db_path))
+
+        _log("open_repository() starting — may connect to PostgreSQL")
+        try:
+            biz_repo = open_repository(Path(db_path))
+        except Exception as exc:
+            _log(f"open_repository() FAILED after {int((time.perf_counter()-_t0)*1000)}ms: {exc}")
+            raise
+        _log("open_repository() + setup_schema() done")
+
+        _log("GraphDB.connect() starting (SQLite)")
         self.db = GraphDB(Path(db_path))
         self.db.biz_repo = biz_repo
         self.db.connect()
+        _log("GraphDB.connect() done")
+
         self.engine = QueryEngine(self.db)
+        _log("build_engines() starting")
         _engines = engines if engines is not None else build_engines(biz_repo)
+        _log("build_engines() done")
+
         self.biz_engine = _engines.biz
         self.cie = _engines.cie
         self.rie = _engines.rie
@@ -1389,6 +1413,7 @@ class KGServer:
         self.ede = _engines.ede
         self._server = Server("tenderscope-kg")
         self._register_handlers()
+        _log(f"KGServer.__init__ complete — total {int((time.perf_counter()-_t0)*1000)}ms")
 
     def _register_handlers(self) -> None:
         @self._server.list_tools()
@@ -1822,8 +1847,9 @@ class KGServer:
         )
         config = uvicorn.Config(app, host=host, port=port, log_level="info")
         server = uvicorn.Server(config)
-        click.echo(f"MCP SSE server listening on {host}:{port}", err=True)
+        click.echo(f"MCP SSE server binding to {host}:{port}", err=True)
         await server.serve()
+        click.echo("MCP SSE server stopped", err=True)
 
 
 @click.command()
@@ -1845,6 +1871,14 @@ def run(repo: str, db: str | None, index: bool, transport: str, port: int | None
     """Start the TenderScope Knowledge Graph MCP server."""
     import asyncio
     import os
+    import time
+    import traceback
+    _run_t0 = time.perf_counter()
+    def _log(msg: str) -> None:
+        elapsed = int((time.perf_counter() - _run_t0) * 1000)
+        click.echo(f"[run +{elapsed:>5}ms] {msg}", err=True)
+
+    _log(f"tkg-mcp starting  transport={transport!r}  index={index}")
 
     repo_path = Path(repo).resolve()
     if not repo_path.exists():
@@ -1852,21 +1886,27 @@ def run(repo: str, db: str | None, index: bool, transport: str, port: int | None
         sys.exit(1)
 
     db_path = db or str(repo_path / ".tkg" / "graph.db")
-    server = KGServer(str(repo_path), db_path)
+
+    try:
+        server = KGServer(str(repo_path), db_path)
+    except Exception:
+        _log("FATAL: KGServer.__init__ raised an exception — server cannot start")
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
 
     if index:
-        click.echo(f"Indexing {repo_path} ...", err=True)
+        _log(f"indexing {repo_path} ...")
         indexer = Indexer(server.db, str(repo_path))
         stats = indexer.run()
-        click.echo(
-            f"Index complete: {stats['entities']} entities, "
+        _log(
+            f"index complete: {stats['entities']} entities, "
             f"{stats['relations']} relations, "
-            f"{stats.get('elapsed_s', '?')}s",
-            err=True,
+            f"{stats.get('elapsed_s', '?')}s"
         )
 
     if transport == "sse":
         http_port = port or int(os.environ.get("PORT", "8080"))
+        _log(f"starting uvicorn on 0.0.0.0:{http_port}")
         asyncio.run(server.serve_sse(port=http_port))
     else:
         asyncio.run(server.serve())
