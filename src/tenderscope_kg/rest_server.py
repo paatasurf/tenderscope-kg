@@ -45,19 +45,19 @@ def create_rest_app(engines: "EngineSet") -> FastAPI:
         title="TenderScope Graph API",
         description="REST transport over the TenderScope business knowledge graph.",
         version="1.0.0",
-        docs_url="/api/graph/docs",
+        docs_url="/docs",
         redoc_url=None,
     )
 
     # ── Health ────────────────────────────────────────────────────────────────
 
-    @app.get("/api/graph/health", tags=["meta"])
+    @app.get("/health", tags=["meta"])
     def graph_health() -> dict:
         return engines.biz.graph_statistics()
 
     # ── Company list ──────────────────────────────────────────────────────────
 
-    @app.get("/api/graph/companies", tags=["companies"])
+    @app.get("/companies", tags=["companies"])
     def list_companies(
         limit: int = Query(50, ge=1, le=500),
         offset: int = Query(0, ge=0),
@@ -66,7 +66,7 @@ def create_rest_app(engines: "EngineSet") -> FastAPI:
 
     # ── Company search (alias-resolving) ─────────────────────────────────────
 
-    @app.get("/api/graph/companies/search", tags=["companies"])
+    @app.get("/companies/search", tags=["companies"])
     def search_companies(
         q: str = Query(..., min_length=1, max_length=300),
         limit: int = Query(20, ge=1, le=200),
@@ -75,7 +75,7 @@ def create_rest_app(engines: "EngineSet") -> FastAPI:
 
     # ── Single company by UID or scraper ID ───────────────────────────────────
 
-    @app.get("/api/graph/companies/{company_id}", tags=["companies"])
+    @app.get("/companies/{company_id}", tags=["companies"])
     def get_company(company_id: str) -> dict:
         result = engines.biz.company_by_id(company_id)
         if "error" in result:
@@ -84,7 +84,7 @@ def create_rest_app(engines: "EngineSet") -> FastAPI:
 
     # ── Company identity (aliases + external IDs) ─────────────────────────────
 
-    @app.get("/api/graph/companies/{uid}/identity", tags=["companies"])
+    @app.get("/companies/{uid}/identity", tags=["companies"])
     def get_company_identity(uid: str) -> dict:
         result = engines.biz.company_identity(uid)
         if "error" in result:
@@ -93,7 +93,7 @@ def create_rest_app(engines: "EngineSet") -> FastAPI:
 
     # ── Company intelligence profile ──────────────────────────────────────────
 
-    @app.get("/api/graph/companies/{uid}/profile", tags=["companies"])
+    @app.get("/companies/{uid}/profile", tags=["companies"])
     def get_company_profile(uid: str) -> dict:
         result = engines.cie.company_profile(uid)
         if "error" in result:
