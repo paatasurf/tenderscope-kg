@@ -1,0 +1,38 @@
+{
+  "person_filter_hits": [],
+  "generic_bucket_hits": [],
+  "companies_analyzed": [
+    {
+      "subject": "EllisDon Corporation",
+      "id": 549130
+    },
+    {
+      "subject": "Chernoff Thompson Architects",
+      "id": 3448
+    },
+    {
+      "subject": "Pontem Group",
+      "id": 8638
+    },
+    {
+      "subject": "BC Event Management Inc.",
+      "id": 8220
+    },
+    {
+      "subject": "GBS Construction Managers Inc.",
+      "id": 548832
+    },
+    {
+      "subject": "MGBA Inc.",
+      "id": 371
+    },
+    {
+      "subject": "Haeccity Studio Architecture",
+      "id": 548653
+    },
+    {
+      "subject": "Kern BSG Management Ltd.",
+      "id": 10136
+    }
+  ]
+}
