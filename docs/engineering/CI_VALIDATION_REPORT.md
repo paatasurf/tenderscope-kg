@@ -58,3 +58,10 @@ Summary: `reports/ci-report.md`
 
 1. GitHub branch protection: require **Quality Gate**  
 2. Railway: Wait for CI  
+
+## What was fixed to make the gate green (test/infra only)
+
+| Change | Type | Business logic changed? |
+|--------|------|-------------------------|
+| Patch `open_repository` in path-resolution tests | Test harness (Linux CI cannot mkdir under `/some` / `/test`) | No |
+
