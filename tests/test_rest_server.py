@@ -118,6 +118,30 @@ def test_v1_company_identity_contract(client: TestClient) -> None:
     assert isinstance(body["external_ids"], dict)
 
 
+def test_v1_company_identity_with_integer_external_id(client: TestClient) -> None:
+    """External identifier values such as scraper_id may be integers in storage."""
+    from tenderscope_kg.domain import EXTERNAL_ID_KEYS
+
+    repo = open_repository()
+    company, _ = repo.put_entity(
+        kind=BizEntityKind.COMPANY,
+        name="Numeric ID Co.",
+        attributes={EXTERNAL_ID_KEYS["scraper_id"]: 12345},
+    )
+    engines = build_engines(repo)
+    rest_app = create_rest_app(engines)
+    app = Starlette(
+        routes=[
+            Mount("/api/v1/graph", app=rest_app),
+        ]
+    )
+    test_client = TestClient(app)
+    response = test_client.get(f"/api/v1/graph/companies/{company.uid}/identity")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["external_ids"][EXTERNAL_ID_KEYS["scraper_id"]] == 12345
+
+
 def test_legacy_company_identity_matches_v1(client: TestClient) -> None:
     uid = _first_company_uid(client)
     v1 = client.get(f"/api/v1/graph/companies/{uid}/identity").json()
