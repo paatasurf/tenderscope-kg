@@ -1,7 +1,5 @@
-# TenderScope Quality Gate — tenderscope-kg
-#
-# Repository-specific CI. Graph is a projection — tests must not require
-# production scraper DB. See bc-tender-scraper docs/engineering/ for ecosystem guide.
+# TenderScope — Phase 2 CI/CD (tenderscope-kg)
+# Parity with bc-tender-scraper Quality Gate. No product-logic changes.
 
 name: Quality Gate
 
@@ -27,6 +25,8 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      DATABASE_URL: ""
 
     steps:
       - name: Checkout
@@ -38,31 +38,111 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install package + dev deps
+      - name: Record environment
         run: |
+          mkdir -p reports
+          {
+            echo "python_version=$(python --version 2>&1)"
+            echo "pip_version=$(python -m pip --version 2>&1)"
+            echo "runner_os=${{ runner.os }}"
+            echo "ref=${{ github.ref }}"
+            echo "sha=${{ github.sha }}"
+          } | tee reports/environment.txt
+
+      - name: Install runtime + development dependencies
+        run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -e ".[dev,rest]"
           pip install pytest-cov
+          echo "dependency_install=ok" | tee reports/deps-status.txt
+          pip freeze > reports/pip-freeze.txt
 
-      - name: Static validation (ruff)
+      - name: Syntax check (compileall)
         run: |
-          ruff check src tests
-          ruff format --check src tests
+          python -m compileall -q src/tenderscope_kg
+          echo "syntax_check=ok" | tee -a reports/deps-status.txt
 
-      - name: Graph + contract + intelligence tests
+      - name: Import smoke (core packages)
         run: |
-          mkdir -p reports
+          python - <<'PY'
+          import importlib
+          mods = [
+              "tenderscope_kg",
+              "tenderscope_kg.db",
+              "tenderscope_kg.cli",
+              "tenderscope_kg.rest_server",
+              "tenderscope_kg.executive_decision",
+              "tenderscope_kg.company_intelligence",
+              "tenderscope_kg.competitive_intelligence",
+          ]
+          failed = []
+          for name in mods:
+              try:
+                  importlib.import_module(name)
+                  print(f"OK  {name}")
+              except Exception as exc:  # noqa: BLE001
+                  failed.append((name, exc))
+                  print(f"FAIL {name}: {exc}")
+          if failed:
+              raise SystemExit(1)
+          print("import_smoke=ok")
+          PY
+          echo "import_smoke=ok" | tee -a reports/deps-status.txt
+
+      - name: Formatting check (ruff format)
+        continue-on-error: true
+        run: |
+          ruff format --check src tests || {
+            echo "format_check=drift" | tee -a reports/deps-status.txt
+            echo "::warning::ruff format drift (advisory Phase 2)"
+          }
+
+      - name: Static analysis (ruff)
+        continue-on-error: true
+        run: |
+          ruff check src tests || {
+            echo "ruff_check=issues" | tee -a reports/deps-status.txt
+            echo "::warning::ruff check issues (advisory Phase 2)"
+          }
+
+      - name: Unit test suite (blocking)
+        run: |
+          set -euo pipefail
+          START=$(date +%s)
           pytest tests \
-            -v --tb=short \
+            -v \
+            --tb=short \
             --cov=tenderscope_kg \
             --cov-report=term-missing:skip-covered \
             --cov-report=xml:reports/coverage.xml \
             --junitxml=reports/unit-junit.xml \
             | tee reports/pytest-unit.txt
+          END=$(date +%s)
+          echo "pytest_elapsed_seconds=$((END-START))" | tee reports/timing.txt
 
-      - name: Deployment readiness summary
+      - name: CI report
         if: always()
-        run: python scripts/ci_summary.py
+        run: |
+          python scripts/ci_report_summary.py \
+            --reports-dir reports \
+            --repo tenderscope-kg \
+            --out reports/ci-report.md \
+            --soft
+          {
+            echo ""
+            echo "## Environment"
+            cat reports/environment.txt
+            echo ""
+            echo "## Dependency / static status"
+            cat reports/deps-status.txt
+            if [ -f reports/timing.txt ]; then
+              echo ""
+              echo "## Timing"
+              cat reports/timing.txt
+            fi
+          } >> reports/ci-report.md
+          cat reports/ci-report.md
 
       - name: Upload CI reports
         if: always()

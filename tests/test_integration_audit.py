@@ -538,8 +538,11 @@ class TestGetEdePathResolution:
             captured["path"] = Path(path)
             return FakeDB()
 
-        with patch.object(cli_module, "GraphDB", side_effect=fake_graphdb):
-            cli_module._get_biz_engine("/some/project")
+        # Patch open_repository: _get_biz_engine creates dirs before GraphDB
+        # (absolute fake paths like /some/project fail on Linux CI runners).
+        with patch.object(cli_module, "open_repository", return_value=MagicMock()):
+            with patch.object(cli_module, "GraphDB", side_effect=fake_graphdb):
+                cli_module._get_biz_engine("/some/project")
 
         assert captured["path"] == Path("/some/project").resolve() / ".tkg" / "graph.db"
 
@@ -571,8 +574,9 @@ class TestGetEdePathResolution:
             with patch.object(cli_module, "ExecutiveDecisionEngine", return_value=MagicMock()):
                 cli_module._get_ede(repo_str)
 
-        with patch.object(cli_module, "GraphDB", side_effect=fake_graphdb_biz):
-            cli_module._get_biz_engine(repo_str)
+        with patch.object(cli_module, "open_repository", return_value=MagicMock()):
+            with patch.object(cli_module, "GraphDB", side_effect=fake_graphdb_biz):
+                cli_module._get_biz_engine(repo_str)
 
         assert paths["ede"] == paths["biz"], f"_get_ede path {paths['ede']} != _get_biz_engine path {paths['biz']}"
 
