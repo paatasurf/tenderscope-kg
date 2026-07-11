@@ -62,7 +62,7 @@ class CompanyIdentityResponse(BaseModel):
     display_name: str = Field(description="Current display name; mutable metadata.")
     canonical_name: str = Field(description="Write-once deduplication key.")
     aliases: list[dict[str, Any]] = Field(default_factory=list, description="Known aliases with evidence.")
-    external_ids: dict[str, str] = Field(
+    external_ids: dict[str, Any] = Field(
         default_factory=dict, description="External identifiers keyed by EXTERNAL_ID_KEYS."
     )
     attributes: dict[str, Any] = Field(default_factory=dict, description="Additional mutable metadata.")
