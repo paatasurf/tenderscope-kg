@@ -1,0 +1,112 @@
+# TenderScope Quality Gate — tenderscope-kg
+#
+# Repository-specific CI. Graph is a projection — tests must not require
+# production scraper DB. See bc-tender-scraper docs/engineering/ for ecosystem guide.
+
+name: Quality Gate
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: quality-gate-kg-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,rest]"
+          pip install pytest-cov
+
+      - name: Static validation (ruff)
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+
+      - name: Graph + contract + intelligence tests
+        run: |
+          mkdir -p reports
+          pytest tests \
+            -v --tb=short \
+            --cov=tenderscope_kg \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=xml:reports/coverage.xml \
+            --junitxml=reports/unit-junit.xml \
+            | tee reports/pytest-unit.txt
+
+      - name: Deployment readiness summary
+        if: always()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import time, xml.etree.ElementTree as ET
+          reports = Path("reports")
+          reports.mkdir(exist_ok=True)
+          junit = reports / "unit-junit.xml"
+          tests = failures = errors = 0
+          elapsed = 0.0
+          if junit.exists():
+              root = ET.parse(junit).getroot()
+              suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+              for s in suites:
+                  tests += int(s.attrib.get("tests", 0))
+                  failures += int(s.attrib.get("failures", 0))
+                  errors += int(s.attrib.get("errors", 0))
+                  elapsed += float(s.attrib.get("time", 0) or 0)
+          cov = "n/a"
+          cxml = reports / "coverage.xml"
+          if cxml.exists():
+              rate = ET.parse(cxml).getroot().attrib.get("line-rate")
+              if rate:
+                  cov = f"{float(rate)*100:.1f}%"
+          ready = failures == 0 and errors == 0 and tests > 0
+          text = f"""# Deployment readiness — `tenderscope-kg`
+
+Generated: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}
+
+**Ready for deploy:** {'YES' if ready else 'NO'}
+
+- Tests: {tests}
+- Failures: {failures}
+- Errors: {errors}
+- Time: {elapsed:.1f}s
+- Coverage (line-rate): {cov}
+"""
+          (reports / "deployment-readiness.md").write_text(text, encoding="utf-8")
+          print(text)
+          PY
+
+      - name: Upload CI reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-reports-kg-${{ github.run_id }}
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 14
