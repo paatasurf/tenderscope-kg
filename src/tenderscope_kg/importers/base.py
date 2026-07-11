@@ -12,6 +12,7 @@ Adding a new importer never requires architecture changes:
 
 That's it.
 """
+
 from __future__ import annotations
 
 import time

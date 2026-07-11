@@ -5,17 +5,18 @@ Orchestrates CIE, RIE, CeI, BIE, and OIE into a single executive-quality
 decision package.  Zero direct graph reads; all data flows through the five
 sub-engine APIs.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from .repository._base import BizRepository
-from .domain import BizEntityKind
-from .company_intelligence import CompanyIntelligenceEngine
-from .relationship_intelligence import RelationshipIntelligenceEngine
-from .competitive_intelligence import CompetitiveIntelligenceEngine
 from .buyer_intelligence import BuyerIntelligenceEngine
+from .company_intelligence import CompanyIntelligenceEngine
+from .competitive_intelligence import CompetitiveIntelligenceEngine
+from .domain import BizEntityKind
 from .opportunity_intelligence import OpportunityIntelligenceEngine
+from .relationship_intelligence import RelationshipIntelligenceEngine
+from .repository._base import BizRepository
 
 # ── NOTE on sub-engine method/field names ────────────────────────────────────
 # CIE:  company_summary(uid)  → {tenders_won, tenders_submitted, industries:[str], confidence_score, ...}
@@ -34,6 +35,7 @@ from .opportunity_intelligence import OpportunityIntelligenceEngine
 
 
 # ── Helper functions ───────────────────────────────────────────────────────────
+
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
     """Clamp *value* to [lo, hi]."""
@@ -83,6 +85,7 @@ def _require_company(repo: BizRepository, uid: str) -> Optional[dict]:
 
 # ── Engine ─────────────────────────────────────────────────────────────────────
 
+
 class ExecutiveDecisionEngine:
     """
     Single orchestration layer combining all five intelligence engines.
@@ -103,11 +106,11 @@ class ExecutiveDecisionEngine:
 
     def __init__(self, repo: BizRepository) -> None:
         self._repo = repo
-        self.cie  = CompanyIntelligenceEngine(repo)
-        self.rie  = RelationshipIntelligenceEngine(repo)
-        self.cei  = CompetitiveIntelligenceEngine(repo)
-        self.bie  = BuyerIntelligenceEngine(repo)
-        self.oie  = OpportunityIntelligenceEngine(repo)
+        self.cie = CompanyIntelligenceEngine(repo)
+        self.rie = RelationshipIntelligenceEngine(repo)
+        self.cei = CompetitiveIntelligenceEngine(repo)
+        self.bie = BuyerIntelligenceEngine(repo)
+        self.oie = OpportunityIntelligenceEngine(repo)
 
     # ── company_situation ─────────────────────────────────────────────────────
 
@@ -129,10 +132,7 @@ class ExecutiveDecisionEngine:
 
         bid_count: int = 0
         if isinstance(summary, dict) and "error" not in summary:
-            bid_count = (
-                (summary.get("tenders_won") or 0) +
-                (summary.get("tenders_submitted") or 0)
-            )
+            bid_count = (summary.get("tenders_won") or 0) + (summary.get("tenders_submitted") or 0)
 
         industries: list = []
         if isinstance(summary, dict) and "error" not in summary:
@@ -156,26 +156,22 @@ class ExecutiveDecisionEngine:
         bid_score = _clamp(bid_count / 20.0)
         health_score = _clamp(_blended_confidence(wr_score, bid_score))
 
-        confidence_raw = float(
-            _safe_get(summary, "confidence_score") or
-            _safe_get(wr_result, "confidence") or
-            0.3
-        )
+        confidence_raw = float(_safe_get(summary, "confidence_score") or _safe_get(wr_result, "confidence") or 0.3)
         confidence = _clamp(confidence_raw)
 
         return {
-            "company_uid":  uid,
+            "company_uid": uid,
             "company_name": entity.name,
-            "summary":      f"{entity.name} — {bid_count} bids recorded.",
-            "win_rate":     win_rate,
-            "bid_count":    bid_count,
-            "trend":        trend_label,
-            "trend_label":  trend_label,
-            "top_buyers":   top_buyers,
-            "industries":   industries,
+            "summary": f"{entity.name} — {bid_count} bids recorded.",
+            "win_rate": win_rate,
+            "bid_count": bid_count,
+            "trend": trend_label,
+            "trend_label": trend_label,
+            "top_buyers": top_buyers,
+            "industries": industries,
             "health_score": health_score,
-            "evidence":     [],
-            "confidence":   confidence,
+            "evidence": [],
+            "confidence": confidence,
         }
 
     # ── market_position ───────────────────────────────────────────────────────
@@ -209,11 +205,7 @@ class ExecutiveDecisionEngine:
         em_result = self.cei.emerging_competitors(uid, limit=3)
         emerging: list = []
         if isinstance(em_result, dict) and "error" not in em_result:
-            emerging = (
-                em_result.get("emerging") or
-                em_result.get("competitors") or
-                []
-            )[:3]
+            emerging = (em_result.get("emerging") or em_result.get("competitors") or [])[:3]
 
         # Growth trend label: returns {trend:str, ...}
         trend_result = self.cei.growth_trend(uid)
@@ -236,16 +228,16 @@ class ExecutiveDecisionEngine:
             classification = "emerging"
 
         return {
-            "company_uid":        uid,
-            "pressure_score":     _clamp(pressure_score),
-            "pressure_level":     pressure_level,
-            "classification":     classification,
-            "win_rate":           win_rate,
+            "company_uid": uid,
+            "pressure_score": _clamp(pressure_score),
+            "pressure_level": pressure_level,
+            "classification": classification,
+            "win_rate": win_rate,
             "direct_competitors": direct,
-            "emerging_threats":   emerging,
-            "trend_label":        trend_label,
-            "evidence":           [],
-            "confidence":         confidence,
+            "emerging_threats": emerging,
+            "trend_label": trend_label,
+            "evidence": [],
+            "confidence": confidence,
         }
 
     # ── relationship_map ──────────────────────────────────────────────────────
@@ -261,9 +253,14 @@ class ExecutiveDecisionEngine:
         inferred_result = self.rie.infer_relationships(uid)
         inferred: list = []
         if isinstance(inferred_result, dict) and "error" not in inferred_result:
-            for key in ("shared_buyer_links", "shared_competitor_links",
-                        "subcontractor_hints", "partnership_hints",
-                        "industry_cluster_peers", "geographic_cluster_peers"):
+            for key in (
+                "shared_buyer_links",
+                "shared_competitor_links",
+                "subcontractor_hints",
+                "partnership_hints",
+                "industry_cluster_peers",
+                "geographic_cluster_peers",
+            ):
                 inferred.extend(inferred_result.get(key) or [])
         inferred = inferred[:10]
 
@@ -282,13 +279,13 @@ class ExecutiveDecisionEngine:
         confidence = _blended_confidence(0.4)
 
         return {
-            "company_uid":            uid,
-            "partnerships":           partnerships,
-            "subcontractor_chains":   chains,
+            "company_uid": uid,
+            "partnerships": partnerships,
+            "subcontractor_chains": chains,
             "inferred_relationships": inferred,
-            "partner_count":          len(partnerships),
-            "evidence":               [],
-            "confidence":             confidence,
+            "partner_count": len(partnerships),
+            "evidence": [],
+            "confidence": confidence,
         }
 
     # ── opportunity_pipeline ──────────────────────────────────────────────────
@@ -324,15 +321,15 @@ class ExecutiveDecisionEngine:
             biggest_risks.append("No open tenders found to score.")
 
         return {
-            "company_uid":       uid,
-            "total_scored":      total_scored,
-            "pursue_count":      pursue_count,
-            "pipeline_health":   pipeline_health,
+            "company_uid": uid,
+            "total_scored": total_scored,
+            "pursue_count": pursue_count,
+            "pipeline_health": pipeline_health,
             "top_opportunities": top_opps,
-            "next_actions":      next_actions,
-            "biggest_risks":     biggest_risks,
-            "evidence":          [{"source": "oie", "count": total_scored}],
-            "confidence":        _clamp(oie_confidence),
+            "next_actions": next_actions,
+            "biggest_risks": biggest_risks,
+            "evidence": [{"source": "oie", "count": total_scored}],
+            "confidence": _clamp(oie_confidence),
         }
 
     # ── buyer_landscape ───────────────────────────────────────────────────────
@@ -353,19 +350,21 @@ class ExecutiveDecisionEngine:
             for b in raw_buyers:
                 if not isinstance(b, dict):
                     continue
-                b_uid  = b.get("uid") or b.get("buyer_uid") or ""
+                b_uid = b.get("uid") or b.get("buyer_uid") or ""
                 b_name = b.get("name") or b.get("buyer_name") or ""
                 if not b_uid or b_uid in seen_buyers:
                     continue
                 seen_buyers.add(b_uid)
                 in_n = self._repo.get_neighbors(b_uid, direction="in")
                 tenders_issued = sum(1 for _r, e in in_n if e.kind == BizEntityKind.TENDER)
-                buyers_list.append({
-                    "buyer_uid":            b_uid,
-                    "buyer_name":           b_name,
-                    "tenders_issued":       tenders_issued,
-                    "company_is_preferred": True,
-                })
+                buyers_list.append(
+                    {
+                        "buyer_uid": b_uid,
+                        "buyer_name": b_name,
+                        "tenders_issued": tenders_issued,
+                        "company_is_preferred": True,
+                    }
+                )
 
         # Fallback: walk award edges → tenders → ISSUED_BY → buyer
         if not buyers_list:
@@ -382,21 +381,23 @@ class ExecutiveDecisionEngine:
                     seen_buyers.add(b_ent.uid)
                     in_n = self._repo.get_neighbors(b_ent.uid, direction="in")
                     tenders_issued = sum(1 for _r, e in in_n if e.kind == BizEntityKind.TENDER)
-                    buyers_list.append({
-                        "buyer_uid":            b_ent.uid,
-                        "buyer_name":           b_ent.name,
-                        "tenders_issued":       tenders_issued,
-                        "company_is_preferred": True,
-                    })
+                    buyers_list.append(
+                        {
+                            "buyer_uid": b_ent.uid,
+                            "buyer_name": b_ent.name,
+                            "tenders_issued": tenders_issued,
+                            "company_is_preferred": True,
+                        }
+                    )
 
         confidence = _blended_confidence(0.5 if buyers_list else 0.2)
 
         return {
-            "company_uid":  uid,
-            "buyer_count":  len(buyers_list),
-            "buyers":       buyers_list,
-            "evidence":     [{"source": "cie+graph", "buyer_count": len(buyers_list)}],
-            "confidence":   confidence,
+            "company_uid": uid,
+            "buyer_count": len(buyers_list),
+            "buyers": buyers_list,
+            "evidence": [{"source": "cie+graph", "buyer_count": len(buyers_list)}],
+            "confidence": confidence,
         }
 
     # ── strategic_priorities ──────────────────────────────────────────────────
@@ -409,17 +410,16 @@ class ExecutiveDecisionEngine:
         priorities: list[dict] = []
         seen: set[str] = set()
 
-        def _add(label: str, score: float, reason: str,
-                 actions: list[str], extra: dict | None = None) -> None:
+        def _add(label: str, score: float, reason: str, actions: list[str], extra: dict | None = None) -> None:
             key = f"{label}:{(extra or {}).get('tender_uid', (extra or {}).get('buyer_uid', ''))}"
             if key in seen:
                 return
             seen.add(key)
             item: dict[str, Any] = {
-                "label":   label,
-                "score":   _clamp(score),
-                "level":   _priority_label(score),
-                "reason":  reason,
+                "label": label,
+                "score": _clamp(score),
+                "level": _priority_label(score),
+                "reason": reason,
                 "actions": actions,
             }
             if extra:
@@ -458,7 +458,10 @@ class ExecutiveDecisionEngine:
                 label="build_market_presence",
                 score=0.65,
                 reason="Company classified as emerging — limited track record.",
-                actions=["Target smaller contracts to build record", "Partner with established firms"],
+                actions=[
+                    "Target smaller contracts to build record",
+                    "Partner with established firms",
+                ],
             )
 
         # Sort by score descending, cap at 10
@@ -468,9 +471,9 @@ class ExecutiveDecisionEngine:
         confidence = _blended_confidence(0.5)
         return {
             "company_uid": uid,
-            "priorities":  priorities,
-            "count":       len(priorities),
-            "confidence":  confidence,
+            "priorities": priorities,
+            "count": len(priorities),
+            "confidence": confidence,
         }
 
     # ── risk_register ─────────────────────────────────────────────────────────
@@ -484,24 +487,25 @@ class ExecutiveDecisionEngine:
         risks: list[dict] = []
         seen_keys: set[str] = set()
 
-        def _add_risk(source: str, factor: str, severity: str,
-                      detail: str, mitigation: str) -> None:
+        def _add_risk(source: str, factor: str, severity: str, detail: str, mitigation: str) -> None:
             key = f"{source}:{factor}"
             if key in seen_keys:
                 return
             seen_keys.add(key)
-            risks.append({
-                "source":     source,
-                "factor":     factor,
-                "severity":   severity,
-                "detail":     detail,
-                "mitigation": mitigation,
-            })
+            risks.append(
+                {
+                    "source": source,
+                    "factor": factor,
+                    "severity": severity,
+                    "detail": detail,
+                    "mitigation": mitigation,
+                }
+            )
 
         # --- gather data ---
         landscape = self.buyer_landscape(uid)
         buyer_count = landscape.get("buyer_count", 0)
-        buyers = landscape.get("buyers", [])
+        landscape.get("buyers", [])
 
         pipeline = self.opportunity_pipeline(uid)
         total_scored = pipeline.get("total_scored", 0)
@@ -555,9 +559,7 @@ class ExecutiveDecisionEngine:
 
         # Risk: competition detected (baseline — fires whenever rivals are present)
         mp_direct = mp.get("direct_competitors") or []
-        if mp_direct and "high_competitive_pressure" not in seen_keys.union(
-            {r["factor"] for r in risks}
-        ):
+        if mp_direct and "high_competitive_pressure" not in seen_keys.union({r["factor"] for r in risks}):
             _add_risk(
                 source="market_position",
                 factor="competition_detected",
@@ -577,16 +579,16 @@ class ExecutiveDecisionEngine:
         else:
             overall_risk = "low"
 
-        evidence   = [{"source": "engines", "risk_count": len(risks)}]
+        evidence = [{"source": "engines", "risk_count": len(risks)}]
         confidence = _blended_confidence(0.5)
 
         return {
-            "company_uid":  uid,
+            "company_uid": uid,
             "overall_risk": overall_risk,
-            "risk_count":   len(risks),
-            "risks":        risks,
-            "evidence":     evidence,
-            "confidence":   confidence,
+            "risk_count": len(risks),
+            "risks": risks,
+            "evidence": evidence,
+            "confidence": confidence,
         }
 
     # ── executive_decision ────────────────────────────────────────────────────
@@ -598,13 +600,13 @@ class ExecutiveDecisionEngine:
 
         entity = self._repo.get(uid)
 
-        situation   = self.company_situation(uid)
-        market      = self.market_position(uid)
-        rel_map     = self.relationship_map(uid)
-        pipeline    = self.opportunity_pipeline(uid, limit=opportunity_limit)
-        landscape   = self.buyer_landscape(uid)
-        priorities  = self.strategic_priorities(uid)
-        risks       = self.risk_register(uid)
+        situation = self.company_situation(uid)
+        market = self.market_position(uid)
+        rel_map = self.relationship_map(uid)
+        pipeline = self.opportunity_pipeline(uid, limit=opportunity_limit)
+        landscape = self.buyer_landscape(uid)
+        priorities = self.strategic_priorities(uid)
+        risks = self.risk_register(uid)
 
         confidence = _blended_confidence(
             situation.get("confidence", 0.3),
@@ -625,8 +627,7 @@ class ExecutiveDecisionEngine:
         wr = situation.get("win_rate")
         wr_str = f"{wr:.0%}" if wr is not None else "unknown"
         narrative = [
-            f"{entity.name} has a win rate of {wr_str} across "
-            f"{situation.get('bid_count', 0)} recorded bids.",
+            f"{entity.name} has a win rate of {wr_str} across {situation.get('bid_count', 0)} recorded bids.",
             f"Market classification: {market.get('classification', 'unknown')}. "
             f"Competitive pressure: {market.get('pressure_score', 0.0):.2f}.",
             f"Open pipeline: {pipeline.get('total_scored', 0)} scored tender(s), "
@@ -636,25 +637,25 @@ class ExecutiveDecisionEngine:
         ]
 
         all_evidence: list = (
-            (situation.get("evidence") or []) +
-            (market.get("evidence") or []) +
-            (pipeline.get("evidence") or []) +
-            (risks.get("evidence") or [])
+            (situation.get("evidence") or [])
+            + (market.get("evidence") or [])
+            + (pipeline.get("evidence") or [])
+            + (risks.get("evidence") or [])
         )
 
         return {
-            "company_uid":         uid,
-            "company_name":        entity.name,
-            "decision_version":    "v0.8.0",
-            "confidence":          confidence,
+            "company_uid": uid,
+            "company_name": entity.name,
+            "decision_version": "v0.8.0",
+            "confidence": confidence,
             "executive_narrative": narrative,
-            "situation":           situation,
-            "market_position":     market,
-            "relationship_map":    rel_map,
+            "situation": situation,
+            "market_position": market,
+            "relationship_map": rel_map,
             "opportunity_pipeline": pipeline,
-            "buyer_landscape":     landscape,
+            "buyer_landscape": landscape,
             "strategic_priorities": priorities,
-            "risk_register":       risks,
-            "immediate_actions":   immediate_actions,
-            "evidence":            all_evidence,
+            "risk_register": risks,
+            "immediate_actions": immediate_actions,
+            "evidence": all_evidence,
         }

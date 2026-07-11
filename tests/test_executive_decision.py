@@ -18,28 +18,28 @@ Covers:
 - Edge cases: unknown UID, wrong entity kind, empty graph
 - Determinism: identical calls return identical results
 """
+
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
 
 import pytest
 
 from tenderscope_kg.domain import BizEntityKind, BizRelationKind
-from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 from tenderscope_kg.executive_decision import (
     ExecutiveDecisionEngine,
-    _clamp,
     _blended_confidence,
-    _safe_get,
+    _clamp,
     _priority_label,
     _require_company,
+    _safe_get,
 )
-
+from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Fixtures
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @pytest.fixture
 def repo():
@@ -56,6 +56,7 @@ def engine(repo):
 
 
 # ── Entity creation helpers ────────────────────────────────────────────────
+
 
 def make_company(repo, name: str, attrs: dict | None = None):
     entity, _ = repo.put_entity(BizEntityKind.COMPANY, name, attrs or {})
@@ -108,13 +109,13 @@ def company_in_city(repo, company, city):
 
 # ── Minimal graph ─────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def simple_graph(repo):
     """One company + one tender it won + buyer."""
-    co     = make_company(repo, "Acme Corp", {"city": "Vancouver"})
-    buyer  = make_org(repo, "Ministry of Works")
-    tender = make_tender(repo, "Road Repair 2024", {"value": 500_000,
-                                                    "closing_date": "2027-12-31"})
+    co = make_company(repo, "Acme Corp", {"city": "Vancouver"})
+    buyer = make_org(repo, "Ministry of Works")
+    tender = make_tender(repo, "Road Repair 2024", {"value": 500_000, "closing_date": "2027-12-31"})
     tender_issued_by(repo, tender, buyer)
     company_wins_tender(repo, co, tender)
     return {"company": co, "buyer": buyer, "tender": tender}
@@ -141,39 +142,40 @@ def rich_graph(repo):
     company_in_city(repo, co_a, city)
 
     for i in range(1, 4):
-        t = make_tender(repo, f"BuyerX Win {i}",
-                        {"value": 300_000 * i, "valid_from": f"202{i}-03-10"})
+        t = make_tender(repo, f"BuyerX Win {i}", {"value": 300_000 * i, "valid_from": f"202{i}-03-10"})
         tender_issued_by(repo, t, buyer_x)
         company_wins_tender(repo, co_a, t)
         company_bids_tender(repo, co_b, t)
         company_bids_tender(repo, co_c, t)
 
-    t_loss = make_tender(repo, "BuyerX Loss",
-                         {"value": 200_000, "valid_from": "2022-07-01"})
+    t_loss = make_tender(repo, "BuyerX Loss", {"value": 200_000, "valid_from": "2022-07-01"})
     tender_issued_by(repo, t_loss, buyer_x)
     company_bids_tender(repo, co_a, t_loss)
     company_wins_tender(repo, co_b, t_loss)
 
-    t_y = make_tender(repo, "BuyerY Win",
-                      {"value": 800_000, "valid_from": "2023-11-01"})
+    t_y = make_tender(repo, "BuyerY Win", {"value": 800_000, "valid_from": "2023-11-01"})
     tender_issued_by(repo, t_y, buyer_y)
     company_wins_tender(repo, co_a, t_y)
 
     # New tender to score (open)
-    t_new = make_tender(repo, "New Opportunity 2025",
-                        {"value": 450_000, "closing_date": "2027-06-30"})
+    t_new = make_tender(repo, "New Opportunity 2025", {"value": 450_000, "closing_date": "2027-06-30"})
     tender_issued_by(repo, t_new, buyer_x)
 
     return {
-        "company": co_a, "rival_b": co_b, "rival_c": co_c,
-        "buyer_x": buyer_x, "buyer_y": buyer_y,
-        "industry": ind, "new_tender": t_new,
+        "company": co_a,
+        "rival_b": co_b,
+        "rival_c": co_c,
+        "buyer_x": buyer_x,
+        "buyer_y": buyer_y,
+        "industry": ind,
+        "new_tender": t_new,
     }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Helper function unit tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestHelpers:
     def test_clamp_within(self):
@@ -255,13 +257,14 @@ class TestHelpers:
 # Engine construction
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestEngineConstruction:
     def test_all_sub_engines_instantiated(self, engine):
-        assert engine.cie  is not None
-        assert engine.rie  is not None
-        assert engine.cei  is not None
-        assert engine.bie  is not None
-        assert engine.oie  is not None
+        assert engine.cie is not None
+        assert engine.rie is not None
+        assert engine.cei is not None
+        assert engine.bie is not None
+        assert engine.oie is not None
 
     def test_engine_takes_repo(self, repo):
         e = ExecutiveDecisionEngine(repo)
@@ -279,6 +282,7 @@ class TestEngineConstruction:
 # company_situation
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestCompanySituation:
     def test_returns_dict(self, engine, simple_graph):
         co = simple_graph["company"]
@@ -288,9 +292,19 @@ class TestCompanySituation:
     def test_required_fields(self, engine, simple_graph):
         co = simple_graph["company"]
         r = engine.company_situation(co.uid)
-        for field in ("company_uid", "company_name", "summary", "win_rate",
-                      "bid_count", "trend", "top_buyers", "industries",
-                      "health_score", "evidence", "confidence"):
+        for field in (
+            "company_uid",
+            "company_name",
+            "summary",
+            "win_rate",
+            "bid_count",
+            "trend",
+            "top_buyers",
+            "industries",
+            "health_score",
+            "evidence",
+            "confidence",
+        ):
             assert field in r, f"Missing field: {field}"
 
     def test_company_uid_in_result(self, engine, simple_graph):
@@ -358,13 +372,23 @@ class TestCompanySituation:
 # market_position
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestMarketPosition:
     def test_required_fields(self, engine, simple_graph):
         co = simple_graph["company"]
         r = engine.market_position(co.uid)
-        for field in ("company_uid", "pressure_score", "pressure_level",
-                      "classification", "win_rate", "direct_competitors",
-                      "emerging_threats", "trend_label", "evidence", "confidence"):
+        for field in (
+            "company_uid",
+            "pressure_score",
+            "pressure_level",
+            "classification",
+            "win_rate",
+            "direct_competitors",
+            "emerging_threats",
+            "trend_label",
+            "evidence",
+            "confidence",
+        ):
             assert field in r, f"Missing field: {field}"
 
     def test_classification_valid_values(self, engine, simple_graph):
@@ -418,13 +442,20 @@ class TestMarketPosition:
 # relationship_map
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestRelationshipMap:
     def test_required_fields(self, engine, simple_graph):
         co = simple_graph["company"]
         r = engine.relationship_map(co.uid)
-        for field in ("company_uid", "partnerships", "subcontractor_chains",
-                      "inferred_relationships", "partner_count",
-                      "evidence", "confidence"):
+        for field in (
+            "company_uid",
+            "partnerships",
+            "subcontractor_chains",
+            "inferred_relationships",
+            "partner_count",
+            "evidence",
+            "confidence",
+        ):
             assert field in r, f"Missing field: {field}"
 
     def test_partnerships_is_list(self, engine, simple_graph):
@@ -471,13 +502,22 @@ class TestRelationshipMap:
 # opportunity_pipeline
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestOpportunityPipeline:
     def test_required_fields(self, engine, simple_graph):
         co = simple_graph["company"]
         r = engine.opportunity_pipeline(co.uid)
-        for field in ("company_uid", "total_scored", "pursue_count",
-                      "pipeline_health", "top_opportunities",
-                      "next_actions", "biggest_risks", "evidence", "confidence"):
+        for field in (
+            "company_uid",
+            "total_scored",
+            "pursue_count",
+            "pipeline_health",
+            "top_opportunities",
+            "next_actions",
+            "biggest_risks",
+            "evidence",
+            "confidence",
+        ):
             assert field in r, f"Missing field: {field}"
 
     def test_pipeline_health_range(self, engine, simple_graph):
@@ -530,12 +570,12 @@ class TestOpportunityPipeline:
 # buyer_landscape
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBuyerLandscape:
     def test_required_fields(self, engine, simple_graph):
         co = simple_graph["company"]
         r = engine.buyer_landscape(co.uid)
-        for field in ("company_uid", "buyer_count", "buyers",
-                      "evidence", "confidence"):
+        for field in ("company_uid", "buyer_count", "buyers", "evidence", "confidence"):
             assert field in r, f"Missing field: {field}"
 
     def test_buyers_is_list(self, engine, simple_graph):
@@ -553,8 +593,7 @@ class TestBuyerLandscape:
         r = engine.buyer_landscape(co.uid)
         if r["buyers"]:
             snap = r["buyers"][0]
-            for field in ("buyer_uid", "buyer_name", "tenders_issued",
-                          "company_is_preferred"):
+            for field in ("buyer_uid", "buyer_name", "tenders_issued", "company_is_preferred"):
                 assert field in snap, f"Missing buyer field: {field}"
 
     def test_confidence_range(self, engine, simple_graph):
@@ -581,6 +620,7 @@ class TestBuyerLandscape:
 # ══════════════════════════════════════════════════════════════════════════════
 # strategic_priorities
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestStrategicPriorities:
     def test_required_fields(self, engine, simple_graph):
@@ -648,8 +688,7 @@ class TestStrategicPriorities:
     def test_no_duplicate_labels_for_same_entity(self, engine, rich_graph):
         co = rich_graph["company"]
         r = engine.strategic_priorities(co.uid)
-        keys = [f"{p['label']}:{p.get('tender_uid', p.get('buyer_uid', ''))}"
-                for p in r["priorities"]]
+        keys = [f"{p['label']}:{p.get('tender_uid', p.get('buyer_uid', ''))}" for p in r["priorities"]]
         assert len(keys) == len(set(keys))
 
     def test_reason_is_string(self, engine, rich_graph):
@@ -663,12 +702,19 @@ class TestStrategicPriorities:
 # risk_register
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestRiskRegister:
     def test_required_fields(self, engine, simple_graph):
         co = simple_graph["company"]
         r = engine.risk_register(co.uid)
-        for field in ("company_uid", "overall_risk", "risk_count",
-                      "risks", "evidence", "confidence"):
+        for field in (
+            "company_uid",
+            "overall_risk",
+            "risk_count",
+            "risks",
+            "evidence",
+            "confidence",
+        ):
             assert field in r, f"Missing field: {field}"
 
     def test_overall_risk_valid_values(self, engine, simple_graph):
@@ -718,9 +764,9 @@ class TestRiskRegister:
         assert "error" in r
 
     def test_single_buyer_triggers_dependency_risk(self, engine, repo):
-        co    = make_company(repo, "Solo Co")
+        co = make_company(repo, "Solo Co")
         buyer = make_org(repo, "Only Buyer")
-        t     = make_tender(repo, "Only Tender", {"value": 100_000})
+        t = make_tender(repo, "Only Tender", {"value": 100_000})
         tender_issued_by(repo, t, buyer)
         company_wins_tender(repo, co, t)
         r = engine.risk_register(co.uid)
@@ -745,7 +791,7 @@ class TestRiskRegister:
             assert isinstance(risk["mitigation"], str)
 
     def test_overall_risk_reflects_highest_severity(self, engine, repo):
-        co    = make_company(repo, "Low Win Co")
+        co = make_company(repo, "Low Win Co")
         buyer = make_org(repo, "BuyerX")
         winner = make_company(repo, "Always Win")
         # 6 bids, 0 wins → very low win rate → high risk
@@ -762,16 +808,27 @@ class TestRiskRegister:
 # executive_decision (master call)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestExecutiveDecision:
     def test_required_top_level_keys(self, engine, simple_graph):
         co = simple_graph["company"]
         r = engine.executive_decision(co.uid)
-        for key in ("company_uid", "company_name", "decision_version",
-                    "confidence", "executive_narrative",
-                    "situation", "market_position", "relationship_map",
-                    "opportunity_pipeline", "buyer_landscape",
-                    "strategic_priorities", "risk_register",
-                    "immediate_actions", "evidence"):
+        for key in (
+            "company_uid",
+            "company_name",
+            "decision_version",
+            "confidence",
+            "executive_narrative",
+            "situation",
+            "market_position",
+            "relationship_map",
+            "opportunity_pipeline",
+            "buyer_landscape",
+            "strategic_priorities",
+            "risk_register",
+            "immediate_actions",
+            "evidence",
+        ):
             assert key in r, f"Missing top-level key: {key}"
 
     def test_company_uid(self, engine, simple_graph):
@@ -878,6 +935,7 @@ class TestExecutiveDecision:
 # Integration tests
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestIntegration:
     def test_rich_graph_full_decision(self, engine, rich_graph):
         co = rich_graph["company"]
@@ -933,9 +991,9 @@ class TestIntegration:
         assert "very_low_win_rate" in factors
 
     def test_single_buyer_in_landscape(self, engine, repo):
-        co    = make_company(repo, "Sole Source Co")
+        co = make_company(repo, "Sole Source Co")
         buyer = make_org(repo, "Only Buyer")
-        t     = make_tender(repo, "Only Contract", {"value": 500_000})
+        t = make_tender(repo, "Only Contract", {"value": 500_000})
         tender_issued_by(repo, t, buyer)
         company_wins_tender(repo, co, t)
         land = engine.buyer_landscape(co.uid)
@@ -944,7 +1002,7 @@ class TestIntegration:
 
     def test_no_tenders_pipeline_empty(self, engine, repo):
         co = make_company(repo, "Brand New Co")
-        r  = engine.opportunity_pipeline(co.uid)
+        r = engine.opportunity_pipeline(co.uid)
         assert r["total_scored"] == 0
         assert r["pursue_count"] == 0
         assert r["pipeline_health"] == 0.0
@@ -953,6 +1011,7 @@ class TestIntegration:
 # ══════════════════════════════════════════════════════════════════════════════
 # Determinism
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestDeterminism:
     def test_situation_deterministic(self, engine, rich_graph):
@@ -994,17 +1053,18 @@ class TestDeterminism:
 # Edge cases
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestEdgeCases:
     def test_company_no_tenders(self, engine, repo):
         co = make_company(repo, "Idle Co")
-        r  = engine.executive_decision(co.uid)
+        r = engine.executive_decision(co.uid)
         assert "error" not in r
         assert r["company_uid"] == co.uid
 
     def test_company_only_losses(self, engine, repo):
-        co     = make_company(repo, "Always Loses")
+        co = make_company(repo, "Always Loses")
         winner = make_company(repo, "Always Wins")
-        buyer  = make_org(repo, "Stern Buyer")
+        buyer = make_org(repo, "Stern Buyer")
         for i in range(3):
             t = make_tender(repo, f"Lost {i}", {"value": 200_000})
             tender_issued_by(repo, t, buyer)
@@ -1014,9 +1074,9 @@ class TestEdgeCases:
         assert "error" not in r
 
     def test_org_entity_accepted(self, engine, repo):
-        org   = make_org(repo, "Procurement Corp")
+        org = make_org(repo, "Procurement Corp")
         buyer = make_org(repo, "Their Buyer")
-        t     = make_tender(repo, "Service Contract", {"value": 100_000})
+        t = make_tender(repo, "Service Contract", {"value": 100_000})
         tender_issued_by(repo, t, buyer)
         company_wins_tender(repo, org, t)
         r = engine.company_situation(org.uid)
@@ -1024,7 +1084,7 @@ class TestEdgeCases:
 
     def test_industry_uid_returns_error(self, engine, repo):
         ind = make_industry(repo, "Test Sector")
-        r   = engine.executive_decision(ind.uid)
+        r = engine.executive_decision(ind.uid)
         assert "error" in r
 
     def test_tender_uid_returns_error(self, engine, repo):

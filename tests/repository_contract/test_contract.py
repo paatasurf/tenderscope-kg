@@ -14,17 +14,15 @@ INTENTIONAL DIVERGENCES (documented, not tested for equality):
 - get_stats() may include backend-specific extra keys (e.g. "sequences").
   Tests only assert on the required keys (entities, relations, by_kind).
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from tenderscope_kg.domain import BizEntityKind, BizRelationKind, canonicalize
 
-
 # ── UID contract ──────────────────────────────────────────────────────────────
 
-class TestUIDContract:
 
+class TestUIDContract:
     def test_put_entity_uid_format(self, repo):
         e, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme Corp")
         prefix, number = e.uid.split("-")
@@ -55,8 +53,8 @@ class TestUIDContract:
 
 # ── Entity create / dedup / update contract ───────────────────────────────────
 
-class TestEntityContract:
 
+class TestEntityContract:
     def test_created_flag_first_insert(self, repo):
         _, created = repo.put_entity(BizEntityKind.COMPANY, "Acme Corp")
         assert created is True
@@ -171,8 +169,8 @@ class TestEntityContract:
 
 # ── Relation contract ─────────────────────────────────────────────────────────
 
-class TestRelationContract:
 
+class TestRelationContract:
     def test_put_relation_created_flag(self, repo):
         c, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme")
         t, _ = repo.put_entity(BizEntityKind.TENDER, "Bridge")
@@ -247,8 +245,7 @@ class TestRelationContract:
     def test_get_neighbors_active_only(self, repo):
         c, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme")
         city, _ = repo.put_entity(BizEntityKind.CITY, "Vancouver")
-        repo.put_relation(c.uid, BizRelationKind.IN_CITY, city.uid,
-                          valid_to="2020-01-01T00:00:00+00:00")
+        repo.put_relation(c.uid, BizRelationKind.IN_CITY, city.uid, valid_to="2020-01-01T00:00:00+00:00")
         active = repo.get_neighbors(c.uid, direction="out", active_only=True)
         assert len(active) == 0
 
@@ -274,8 +271,8 @@ class TestRelationContract:
 
 # ── History contract ──────────────────────────────────────────────────────────
 
-class TestHistoryContract:
 
+class TestHistoryContract:
     def test_history_written_on_create(self, repo):
         e, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme", write_history=True)
         history = repo.entity_history(e.uid)
@@ -284,17 +281,14 @@ class TestHistoryContract:
 
     def test_history_appended_on_update(self, repo):
         repo.put_entity(BizEntityKind.COMPANY, "Acme", write_history=True)
-        repo.put_entity(BizEntityKind.COMPANY, "Acme",
-                        attributes={"city": "Victoria"}, write_history=True)
+        repo.put_entity(BizEntityKind.COMPANY, "Acme", attributes={"city": "Victoria"}, write_history=True)
         e, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme", write_history=False)
         history = repo.entity_history(e.uid)
         assert len(history) == 2
 
     def test_history_oldest_first(self, repo):
-        repo.put_entity(BizEntityKind.COMPANY, "Acme",
-                        attributes={"v": "1"}, write_history=True)
-        repo.put_entity(BizEntityKind.COMPANY, "Acme",
-                        attributes={"v": "2"}, write_history=True)
+        repo.put_entity(BizEntityKind.COMPANY, "Acme", attributes={"v": "1"}, write_history=True)
+        repo.put_entity(BizEntityKind.COMPANY, "Acme", attributes={"v": "2"}, write_history=True)
         e, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme", write_history=False)
         history = repo.entity_history(e.uid)
         assert history[0]["changed_at"] <= history[1]["changed_at"]
@@ -315,8 +309,8 @@ class TestHistoryContract:
 
 # ── FTS contract ──────────────────────────────────────────────────────────────
 
-class TestFTSContract:
 
+class TestFTSContract:
     def test_empty_query_returns_empty(self, repo):
         repo.put_entity(BizEntityKind.COMPANY, "Pacific Rim Construction")
         repo.rebuild_fts()
@@ -361,8 +355,8 @@ class TestFTSContract:
 
 # ── Stats contract ────────────────────────────────────────────────────────────
 
-class TestStatsContract:
 
+class TestStatsContract:
     def test_stats_required_keys(self, repo):
         stats = repo.get_stats()
         assert "entities" in stats
@@ -399,8 +393,8 @@ class TestStatsContract:
 
 # ── Transaction contract ──────────────────────────────────────────────────────
 
-class TestTransactionContract:
 
+class TestTransactionContract:
     def test_transaction_commits_on_success(self, repo):
         with repo.transaction():
             repo.put_entity(BizEntityKind.COMPANY, "Acme")
@@ -425,13 +419,13 @@ class TestTransactionContract:
 
 # ── Bulk operations contract ──────────────────────────────────────────────────
 
-class TestBulkContract:
 
+class TestBulkContract:
     def test_bulk_put_returns_counts(self, repo):
         records = [
             {"kind": "company", "name": "Acme"},
             {"kind": "company", "name": "BuildCo"},
-            {"kind": "tender",  "name": "Bridge Rehab"},
+            {"kind": "tender", "name": "Bridge Rehab"},
         ]
         created, updated = repo.bulk_put_entities(records)
         assert created == 3
@@ -447,7 +441,7 @@ class TestBulkContract:
     def test_bulk_put_entities_accessible(self, repo):
         records = [
             {"kind": "company", "name": "Pacific Rim"},
-            {"kind": "tender",  "name": "Highway 1 Upgrade"},
+            {"kind": "tender", "name": "Highway 1 Upgrade"},
         ]
         repo.bulk_put_entities(records, source="test")
         companies = repo.find(kind=BizEntityKind.COMPANY)

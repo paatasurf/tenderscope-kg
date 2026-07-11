@@ -3,6 +3,7 @@ SQLite-backed graph database layer.
 Schema uses three normalized tables: entities, relations, and metadata.
 WAL mode is enabled for concurrent readers.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -12,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Iterable, Optional
 
-from .models import Entity, EntityKind, IndexStats, Relation, RelationKind
+from .models import Entity, EntityKind, Relation, RelationKind
 
 SCHEMA_VERSION = "1"
 
@@ -140,9 +141,19 @@ class GraphDB:
         VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """
         rows = [
-            (e.id, e.kind.value, e.name, e.qualified_name, e.file_path,
-             e.line_start, e.line_end, e.signature, e.docstring,
-             e.language, json.dumps(e.extra))
+            (
+                e.id,
+                e.kind.value,
+                e.name,
+                e.qualified_name,
+                e.file_path,
+                e.line_start,
+                e.line_end,
+                e.signature,
+                e.docstring,
+                e.language,
+                json.dumps(e.extra),
+            )
             for e in entities
         ]
         with self.transaction() as conn:
@@ -156,8 +167,16 @@ class GraphDB:
         VALUES (?,?,?,?,?,?,?,?)
         """
         rows = [
-            (r.id, r.source_id, r.target_id, r.kind.value,
-             r.file_path, r.line, r.weight, json.dumps(r.extra))
+            (
+                r.id,
+                r.source_id,
+                r.target_id,
+                r.kind.value,
+                r.file_path,
+                r.line,
+                r.weight,
+                json.dumps(r.extra),
+            )
             for r in relations
         ]
         assert self._conn
@@ -187,31 +206,23 @@ class GraphDB:
 
     def set_meta(self, key: str, value: str) -> None:
         with self.transaction() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO meta(key, value) VALUES (?,?)", (key, value)
-            )
+            conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?,?)", (key, value))
 
     def get_meta(self, key: str) -> Optional[str]:
         assert self._conn
-        row = self._conn.execute(
-            "SELECT value FROM meta WHERE key = ?", (key,)
-        ).fetchone()
+        row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
 
     # ── Read operations ───────────────────────────────────────────────────
 
     def get_entity(self, entity_id: str) -> Optional[Entity]:
         assert self._conn
-        row = self._conn.execute(
-            "SELECT * FROM entities WHERE id = ?", (entity_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM entities WHERE id = ?", (entity_id,)).fetchone()
         return _row_to_entity(row) if row else None
 
     def get_entity_by_qname(self, qualified_name: str) -> Optional[Entity]:
         assert self._conn
-        row = self._conn.execute(
-            "SELECT * FROM entities WHERE qualified_name = ?", (qualified_name,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM entities WHERE qualified_name = ?", (qualified_name,)).fetchone()
         return _row_to_entity(row) if row else None
 
     def find_entities(
@@ -238,16 +249,15 @@ class GraphDB:
             params.append(language)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.append(limit)
-        rows = self._conn.execute(
-            f"SELECT * FROM entities {where} LIMIT ?", params
-        ).fetchall()
+        rows = self._conn.execute(f"SELECT * FROM entities {where} LIMIT ?", params).fetchall()
         return [_row_to_entity(r) for r in rows]
 
     def search_fts(self, query: str, limit: int = 20) -> list[Entity]:
         assert self._conn
         # Build a safe FTS5 query: quote each word as a separate prefix term
         import re as _re
-        words = [w for w in _re.split(r'[^\w]+', query.strip()) if w]
+
+        words = [w for w in _re.split(r"[^\w]+", query.strip()) if w]
         if not words:
             return []
         fts_query = " OR ".join(f'"{w}"*' for w in words)
@@ -269,7 +279,7 @@ class GraphDB:
     def get_neighbors(
         self,
         entity_id: str,
-        direction: str = "both",      # "out", "in", "both"
+        direction: str = "both",  # "out", "in", "both"
         kinds: Optional[list[RelationKind]] = None,
         limit: int = 50,
     ) -> list[tuple[Relation, Entity]]:
@@ -362,8 +372,7 @@ class GraphDB:
         entity_count = self._conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
         relation_count = self._conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
         lang_rows = self._conn.execute(
-            "SELECT language, COUNT(*) as c FROM entities "
-            "WHERE kind IN ('file','config_file') GROUP BY language"
+            "SELECT language, COUNT(*) as c FROM entities WHERE kind IN ('file','config_file') GROUP BY language"
         ).fetchall()
         languages = {r["language"] or "unknown": r["c"] for r in lang_rows}
         file_count = self._conn.execute(
@@ -402,12 +411,8 @@ class GraphDB:
                 e = self.get_entity(eid)
                 if e:
                     visited_entities[eid] = e
-                out_rows = self._conn.execute(
-                    "SELECT * FROM relations WHERE source_id = ?", (eid,)
-                ).fetchall()
-                in_rows = self._conn.execute(
-                    "SELECT * FROM relations WHERE target_id = ?", (eid,)
-                ).fetchall()
+                out_rows = self._conn.execute("SELECT * FROM relations WHERE source_id = ?", (eid,)).fetchall()
+                in_rows = self._conn.execute("SELECT * FROM relations WHERE target_id = ?", (eid,)).fetchall()
                 for row in out_rows + in_rows:
                     rel = _row_to_relation(row)
                     visited_relations.append(rel)
@@ -420,11 +425,12 @@ class GraphDB:
 
 # ── Row → Model helpers ───────────────────────────────────────────────────────
 
+
 def _row_to_entity(row: sqlite3.Row, prefix: str = "") -> Entity:
     d = dict(row)
     if prefix:
         # Strip prefix (e.g. "e_id" -> "id") for aliased JOIN columns
-        d = {k[len(prefix):]: v for k, v in d.items() if k.startswith(prefix)}
+        d = {k[len(prefix) :]: v for k, v in d.items() if k.startswith(prefix)}
     return Entity(
         id=d["id"],
         kind=EntityKind(d["kind"]),

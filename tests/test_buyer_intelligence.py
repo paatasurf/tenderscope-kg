@@ -13,34 +13,34 @@ Graph construction pattern (in-memory SQLite):
   - bid(repo, company, tender)   → company SUBMITTED_BID on tender
   - link_industry(repo, company, industry_name) → company IN_INDUSTRY industry
 """
+
 from __future__ import annotations
 
 import sqlite3
-from collections import defaultdict
 from typing import Optional
 
 import pytest
 
-from tenderscope_kg.domain import BizEntityKind, BizRelationKind
-from tenderscope_kg.repository._base import BizRepository
-from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 from tenderscope_kg.buyer_intelligence import (
     BuyerIntelligenceEngine,
+    _buyer_tenders,
     _confidence,
     _ev,
     _hhi,
     _parse_month,
     _parse_year,
     _safe_float,
-    _buyer_tenders,
     _tender_participants,
     _tender_winner,
 )
-
+from tenderscope_kg.domain import BizEntityKind, BizRelationKind
+from tenderscope_kg.repository._base import BizRepository
+from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Fixtures
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @pytest.fixture
 def repo():
@@ -60,6 +60,7 @@ def bie(repo: BizRepository) -> BuyerIntelligenceEngine:
 # Graph construction helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def make_org(repo: BizRepository, name: str) -> str:
     ent, _ = repo.put_entity(BizEntityKind.ORGANIZATION, name)
     return ent.uid
@@ -70,9 +71,7 @@ def make_company(repo: BizRepository, name: str) -> str:
     return ent.uid
 
 
-def make_tender(repo: BizRepository, name: str,
-                date: Optional[str] = None,
-                value: Optional[float] = None) -> str:
+def make_tender(repo: BizRepository, name: str, date: Optional[str] = None, value: Optional[float] = None) -> str:
     attrs: dict = {}
     if date:
         attrs["valid_from"] = date
@@ -107,8 +106,7 @@ def bid(repo: BizRepository, company_uid: str, tender_uid: str) -> None:
     )
 
 
-def link_industry(repo: BizRepository, company_uid: str,
-                  industry_name: str) -> str:
+def link_industry(repo: BizRepository, company_uid: str, industry_name: str) -> str:
     ind_ent, _ = repo.put_entity(BizEntityKind.INDUSTRY, industry_name)
     repo.put_relation(
         source_uid=company_uid,
@@ -121,6 +119,7 @@ def link_industry(repo: BizRepository, company_uid: str,
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helper function unit tests
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestHelpers:
     def test_ev_structure(self):
@@ -188,6 +187,7 @@ class TestHelpers:
 # Graph traversal helper tests
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestGraphHelpers:
     def test_buyer_tenders_empty(self, repo: BizRepository):
         org = make_org(repo, "EmptyOrg")
@@ -195,8 +195,8 @@ class TestGraphHelpers:
 
     def test_buyer_tenders_returns_tenders(self, repo: BizRepository):
         org = make_org(repo, "BuyerOrg")
-        t1  = make_tender(repo, "T1")
-        t2  = make_tender(repo, "T2")
+        t1 = make_tender(repo, "T1")
+        t2 = make_tender(repo, "T2")
         issue(repo, org, t1)
         issue(repo, org, t2)
         result = _buyer_tenders(repo, org)
@@ -208,7 +208,7 @@ class TestGraphHelpers:
         assert _tender_participants(repo, t) == []
 
     def test_tender_participants_returns_all_roles(self, repo: BizRepository):
-        t  = make_tender(repo, "T-Roles")
+        t = make_tender(repo, "T-Roles")
         c1 = make_company(repo, "Winner")
         c2 = make_company(repo, "Bidder")
         award(repo, c1, t)
@@ -235,6 +235,7 @@ class TestGraphHelpers:
 # buyer_summary
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBuyerSummary:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.buyer_summary("ORG-MISSING")
@@ -249,8 +250,8 @@ class TestBuyerSummary:
 
     def test_summary_fields_present(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "FieldsOrg")
-        t   = make_tender(repo, "T-Sum")
-        c   = make_company(repo, "FieldCo")
+        t = make_tender(repo, "T-Sum")
+        c = make_company(repo, "FieldCo")
         issue(repo, org, t)
         award(repo, c, t)
         r = bie.buyer_summary(org)
@@ -261,8 +262,8 @@ class TestBuyerSummary:
 
     def test_top_supplier(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "TopOrg")
-        c1  = make_company(repo, "FreqWinner")
-        c2  = make_company(repo, "RareWinner")
+        c1 = make_company(repo, "FreqWinner")
+        c2 = make_company(repo, "RareWinner")
         for i in range(3):
             t = make_tender(repo, f"T-TopOrg-{i}")
             issue(repo, org, t)
@@ -275,13 +276,14 @@ class TestBuyerSummary:
 
     def test_company_kind_accepted(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         cmp = make_company(repo, "CompanyBuyer")
-        r   = bie.buyer_summary(cmp)
+        r = bie.buyer_summary(cmp)
         assert "error" not in r
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # supplier_roster
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestSupplierRoster:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
@@ -290,27 +292,27 @@ class TestSupplierRoster:
 
     def test_empty_roster(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "NoSuppliers")
-        r   = bie.supplier_roster(org)
+        r = bie.supplier_roster(org)
         assert r["supplier_count"] == 0
         assert r["suppliers"] == []
 
     def test_roster_contains_winners(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "RosterOrg")
-        c1  = make_company(repo, "Alpha")
-        c2  = make_company(repo, "Beta")
-        t1  = make_tender(repo, "T-R1")
-        t2  = make_tender(repo, "T-R2")
+        c1 = make_company(repo, "Alpha")
+        c2 = make_company(repo, "Beta")
+        t1 = make_tender(repo, "T-R1")
+        t2 = make_tender(repo, "T-R2")
         issue(repo, org, t1)
         issue(repo, org, t2)
         award(repo, c1, t1)
         award(repo, c2, t2)
-        r    = bie.supplier_roster(org)
+        r = bie.supplier_roster(org)
         uids = {s["uid"] for s in r["suppliers"]}
         assert c1 in uids and c2 in uids
 
     def test_roster_win_rate_correct(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "WinRateOrg")
-        c   = make_company(repo, "WinRateCo")
+        c = make_company(repo, "WinRateCo")
         for i in range(4):
             t = make_tender(repo, f"T-WR-{i}")
             issue(repo, org, t)
@@ -318,16 +320,16 @@ class TestSupplierRoster:
                 award(repo, c, t)
             else:
                 bid(repo, c, t)
-        r      = bie.supplier_roster(org)
-        sup    = next(s for s in r["suppliers"] if s["uid"] == c)
+        r = bie.supplier_roster(org)
+        sup = next(s for s in r["suppliers"] if s["uid"] == c)
         assert sup["award_count"] == 2
-        assert sup["bid_count"]   == 4
-        assert sup["win_rate"]    == pytest.approx(0.5)
+        assert sup["bid_count"] == 4
+        assert sup["win_rate"] == pytest.approx(0.5)
 
     def test_roster_sorted_by_awards(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "SortOrg")
-        c1  = make_company(repo, "Few")
-        c2  = make_company(repo, "Many")
+        c1 = make_company(repo, "Few")
+        c2 = make_company(repo, "Many")
         for i in range(3):
             t = make_tender(repo, f"T-Sort-{i}")
             issue(repo, org, t)
@@ -353,13 +355,13 @@ class TestSupplierRoster:
 # preferred_suppliers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestPreferredSuppliers:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.preferred_suppliers("ORG-MISSING")
         assert "error" in r
 
-    def test_no_preferred_when_all_one_award(self, bie: BuyerIntelligenceEngine,
-                                              repo: BizRepository):
+    def test_no_preferred_when_all_one_award(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "OneAwardOrg")
         for i in range(5):
             c = make_company(repo, f"PrefCo-{i}")
@@ -369,11 +371,10 @@ class TestPreferredSuppliers:
         r = bie.preferred_suppliers(org, min_awards=2)
         assert r["preferred_supplier_count"] == 0
 
-    def test_preferred_threshold_respected(self, bie: BuyerIntelligenceEngine,
-                                            repo: BizRepository):
+    def test_preferred_threshold_respected(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "ThreshOrg")
-        c1  = make_company(repo, "Repeat")
-        c2  = make_company(repo, "OneTime")
+        c1 = make_company(repo, "Repeat")
+        c2 = make_company(repo, "OneTime")
         for i in range(3):
             t = make_tender(repo, f"T-Thresh-{i}")
             issue(repo, org, t)
@@ -387,7 +388,7 @@ class TestPreferredSuppliers:
 
     def test_evidence_present(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "EvPrefOrg")
-        c   = make_company(repo, "EvPrefCo")
+        c = make_company(repo, "EvPrefCo")
         for i in range(3):
             t = make_tender(repo, f"T-EvPref-{i}")
             issue(repo, org, t)
@@ -401,6 +402,7 @@ class TestPreferredSuppliers:
 # supplier_loyalty
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestSupplierLoyalty:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.supplier_loyalty("ORG-MISSING")
@@ -408,25 +410,25 @@ class TestSupplierLoyalty:
 
     def test_empty_buyer_loyalty(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "EmptyLoyOrg")
-        r   = bie.supplier_loyalty(org)
+        r = bie.supplier_loyalty(org)
         assert r["overall_loyalty_score"] == 0.0
         assert r["unique_suppliers_awarded"] == 0
 
     def test_loyalty_index_formula(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "LoyOrg")
-        c   = make_company(repo, "LoyCo")
+        c = make_company(repo, "LoyCo")
         for i in range(4):
             t = make_tender(repo, f"T-Loy-{i}")
             issue(repo, org, t)
             award(repo, c, t)
-        r   = bie.supplier_loyalty(org)
+        r = bie.supplier_loyalty(org)
         sup = next(s for s in r["supplier_loyalty"] if s["uid"] == c)
         # 4 awards out of 4 tenders → loyalty_index = 1.0
         assert sup["loyalty_index"] == pytest.approx(1.0)
 
     def test_loyalty_interpretation_high(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "HighLoyOrg")
-        c   = make_company(repo, "HighLoyCo")
+        c = make_company(repo, "HighLoyCo")
         for i in range(5):
             t = make_tender(repo, f"T-HiLoy-{i}")
             issue(repo, org, t)
@@ -450,8 +452,8 @@ class TestSupplierLoyalty:
 
     def test_loyalty_sorted_by_index(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "SortLoyOrg")
-        c1  = make_company(repo, "Loyal")
-        c2  = make_company(repo, "Occasional")
+        c1 = make_company(repo, "Loyal")
+        c2 = make_company(repo, "Occasional")
         for i in range(3):
             t = make_tender(repo, f"T-SortLoy-{i}")
             issue(repo, org, t)
@@ -467,6 +469,7 @@ class TestSupplierLoyalty:
 # supplier_diversity
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestSupplierDiversity:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.supplier_diversity("ORG-MISSING")
@@ -475,14 +478,14 @@ class TestSupplierDiversity:
     def test_no_awards_diversity_one(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         # With no awards HHI=0 → diversity = 1 - 0 = 1.0 (no concentration data)
         org = make_org(repo, "NoDivOrg")
-        t   = make_tender(repo, "T-NoDivTender")
+        t = make_tender(repo, "T-NoDivTender")
         issue(repo, org, t)
         r = bie.supplier_diversity(org)
         assert r["diversity_score"] == pytest.approx(1.0)
 
     def test_monopoly_diversity_zero(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "MonopolyOrg")
-        c   = make_company(repo, "MonoCo")
+        c = make_company(repo, "MonoCo")
         for i in range(5):
             t = make_tender(repo, f"T-Mono-{i}")
             issue(repo, org, t)
@@ -504,8 +507,8 @@ class TestSupplierDiversity:
 
     def test_diversity_fields(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "FieldsDivOrg")
-        c   = make_company(repo, "FieldsDivCo")
-        t   = make_tender(repo, "T-FieldsDiv")
+        c = make_company(repo, "FieldsDivCo")
+        t = make_tender(repo, "T-FieldsDiv")
         issue(repo, org, t)
         award(repo, c, t)
         r = bie.supplier_diversity(org)
@@ -521,6 +524,7 @@ class TestSupplierDiversity:
 # buying_patterns
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBuyingPatterns:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.buying_patterns("ORG-MISSING")
@@ -528,7 +532,7 @@ class TestBuyingPatterns:
 
     def test_empty_buyer(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "EmptyPatOrg")
-        r   = bie.buying_patterns(org)
+        r = bie.buying_patterns(org)
         assert r["total_tenders"] == 0
         assert r["avg_value"] is None
         assert r["avg_bidder_count"] == 0.0
@@ -577,6 +581,7 @@ class TestBuyingPatterns:
 # procurement_seasonality
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestProcurementSeasonality:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.procurement_seasonality("ORG-MISSING")
@@ -584,23 +589,23 @@ class TestProcurementSeasonality:
 
     def test_empty_no_dates(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "NoDatesOrg")
-        t   = make_tender(repo, "T-NoDates")
+        t = make_tender(repo, "T-NoDates")
         issue(repo, org, t)
-        r   = bie.procurement_seasonality(org)
+        r = bie.procurement_seasonality(org)
         assert r["tenders_with_dates"] == 0
 
     def test_twelve_months_returned(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "TwelveMonthOrg")
-        t   = make_tender(repo, "T-12M", date="2023-06-15")
+        t = make_tender(repo, "T-12M", date="2023-06-15")
         issue(repo, org, t)
-        r   = bie.procurement_seasonality(org)
+        r = bie.procurement_seasonality(org)
         assert len(r["monthly"]) == 12
 
     def test_four_quarters_returned(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "QuarterOrg")
-        t   = make_tender(repo, "T-Q1", date="2023-02-01")
+        t = make_tender(repo, "T-Q1", date="2023-02-01")
         issue(repo, org, t)
-        r   = bie.procurement_seasonality(org)
+        r = bie.procurement_seasonality(org)
         assert len(r["quarterly"]) == 4
 
     def test_peak_month_correct(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
@@ -615,9 +620,9 @@ class TestProcurementSeasonality:
 
     def test_seasonality_index_structure(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "SeaIdxOrg")
-        t   = make_tender(repo, "T-SeaIdx", date="2023-04-01")
+        t = make_tender(repo, "T-SeaIdx", date="2023-04-01")
         issue(repo, org, t)
-        r   = bie.procurement_seasonality(org)
+        r = bie.procurement_seasonality(org)
         for month_row in r["monthly"]:
             assert "seasonality_index" in month_row
             assert "share" in month_row
@@ -628,6 +633,7 @@ class TestProcurementSeasonality:
 # preferred_industries
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestPreferredIndustries:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.preferred_industries("ORG-MISSING")
@@ -635,26 +641,26 @@ class TestPreferredIndustries:
 
     def test_no_industries(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "NoIndOrg")
-        c   = make_company(repo, "NoIndCo")
-        t   = make_tender(repo, "T-NoInd")
+        c = make_company(repo, "NoIndCo")
+        t = make_tender(repo, "T-NoInd")
         issue(repo, org, t)
         award(repo, c, t)
         r = bie.preferred_industries(org)
         assert r["industry_count"] == 0
 
     def test_industries_detected(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
-        org  = make_org(repo, "IndOrg")
-        c    = make_company(repo, "IndCo")
-        t    = make_tender(repo, "T-Ind")
+        org = make_org(repo, "IndOrg")
+        c = make_company(repo, "IndCo")
+        t = make_tender(repo, "T-Ind")
         issue(repo, org, t)
         award(repo, c, t)
         link_industry(repo, c, "Construction")
-        r    = bie.preferred_industries(org)
+        r = bie.preferred_industries(org)
         assert r["industry_count"] >= 1
         assert any(i["name"] == "Construction" for i in r["industries"])
 
     def test_industry_sorted_by_count(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
-        org  = make_org(repo, "IndSortOrg")
+        org = make_org(repo, "IndSortOrg")
         # 3 construction vs 1 IT
         for i in range(3):
             c = make_company(repo, f"ConstrCo-{i}")
@@ -687,6 +693,7 @@ class TestPreferredIndustries:
 # preferred_contract_sizes
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestPreferredContractSizes:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.preferred_contract_sizes("ORG-MISSING")
@@ -694,24 +701,24 @@ class TestPreferredContractSizes:
 
     def test_no_values(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "NoValOrg")
-        t   = make_tender(repo, "T-NoVal")
+        t = make_tender(repo, "T-NoVal")
         issue(repo, org, t)
-        r   = bie.preferred_contract_sizes(org)
+        r = bie.preferred_contract_sizes(org)
         assert r["tenders_with_value"] == 0
         assert r["avg_value"] is None
 
     def test_five_buckets_returned(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "BucketOrg")
-        t   = make_tender(repo, "T-Bucket", value=5000.0)
+        t = make_tender(repo, "T-Bucket", value=5000.0)
         issue(repo, org, t)
-        r   = bie.preferred_contract_sizes(org)
+        r = bie.preferred_contract_sizes(org)
         assert len(r["buckets"]) == 5
 
     def test_micro_bucket(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "MicroOrg")
-        t   = make_tender(repo, "T-Micro", value=500.0)
+        t = make_tender(repo, "T-Micro", value=500.0)
         issue(repo, org, t)
-        r   = bie.preferred_contract_sizes(org)
+        r = bie.preferred_contract_sizes(org)
         micro = next(b for b in r["buckets"] if b["bucket"] == "micro")
         assert micro["count"] == 1
         assert r["preferred_bucket"] == "micro"
@@ -721,7 +728,7 @@ class TestPreferredContractSizes:
         for i in range(3):
             t = make_tender(repo, f"T-Large-{i}", value=5_000_000.0)
             issue(repo, org, t)
-        r    = bie.preferred_contract_sizes(org)
+        r = bie.preferred_contract_sizes(org)
         large = next(b for b in r["buckets"] if b["bucket"] == "large")
         assert large["count"] == 3
         assert r["preferred_bucket"] == "large"
@@ -731,6 +738,7 @@ class TestPreferredContractSizes:
 # avg_procurement_value
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestAvgProcurementValue:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.avg_procurement_value("ORG-MISSING")
@@ -738,9 +746,9 @@ class TestAvgProcurementValue:
 
     def test_no_values(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "NoAvgOrg")
-        t   = make_tender(repo, "T-NoAvg")
+        t = make_tender(repo, "T-NoAvg")
         issue(repo, org, t)
-        r   = bie.avg_procurement_value(org)
+        r = bie.avg_procurement_value(org)
         assert r["tenders_with_value"] == 0
         assert r["avg_value"] is None
 
@@ -776,6 +784,7 @@ class TestAvgProcurementValue:
 # avg_bidder_count
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestAvgBidderCount:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.avg_bidder_count("ORG-MISSING")
@@ -783,16 +792,16 @@ class TestAvgBidderCount:
 
     def test_empty_buyer(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "EmptyBidOrg")
-        r   = bie.avg_bidder_count(org)
+        r = bie.avg_bidder_count(org)
         assert r["total_tenders"] == 0
         assert r["avg_bidder_count"] == 0.0
 
     def test_single_bidder_rate(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "SBOrg")
-        t1  = make_tender(repo, "T-SB1")
-        t2  = make_tender(repo, "T-SB2")
-        c1  = make_company(repo, "SBCo1")
-        c2  = make_company(repo, "SBCo2")
+        t1 = make_tender(repo, "T-SB1")
+        t2 = make_tender(repo, "T-SB2")
+        c1 = make_company(repo, "SBCo1")
+        c2 = make_company(repo, "SBCo2")
         issue(repo, org, t1)
         issue(repo, org, t2)
         # t1: 1 bidder (single)
@@ -806,16 +815,19 @@ class TestAvgBidderCount:
 
     def test_avg_bidder_count_correct(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "AvgBidOrg")
-        c1  = make_company(repo, "Bidder1")
-        c2  = make_company(repo, "Bidder2")
-        c3  = make_company(repo, "Bidder3")
+        c1 = make_company(repo, "Bidder1")
+        c2 = make_company(repo, "Bidder2")
+        c3 = make_company(repo, "Bidder3")
         # t1: 2 bidders, t2: 4 bidders → avg = 3
         t1 = make_tender(repo, "T-AvgBid1")
         t2 = make_tender(repo, "T-AvgBid2")
         issue(repo, org, t1)
         issue(repo, org, t2)
-        bid(repo, c1, t1); bid(repo, c2, t1)
-        bid(repo, c1, t2); bid(repo, c2, t2); bid(repo, c3, t2)
+        bid(repo, c1, t1)
+        bid(repo, c2, t1)
+        bid(repo, c1, t2)
+        bid(repo, c2, t2)
+        bid(repo, c3, t2)
         award(repo, c3, t2)
         r = bie.avg_bidder_count(org)
         assert r["avg_bidder_count"] == pytest.approx(3.0, abs=0.5)
@@ -825,6 +837,7 @@ class TestAvgBidderCount:
 # award_concentration
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestAwardConcentration:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.award_concentration("ORG-MISSING")
@@ -832,15 +845,15 @@ class TestAwardConcentration:
 
     def test_no_awards(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "NoAwardConc")
-        t   = make_tender(repo, "T-NoAward")
+        t = make_tender(repo, "T-NoAward")
         issue(repo, org, t)
-        r   = bie.award_concentration(org)
+        r = bie.award_concentration(org)
         assert r["total_awards"] == 0
         assert r["hhi"] == 0.0
 
     def test_monopoly_hhi_one(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "MonoHHIOrg")
-        c   = make_company(repo, "MonoHHICo")
+        c = make_company(repo, "MonoHHICo")
         for i in range(5):
             t = make_tender(repo, f"T-MonoHHI-{i}")
             issue(repo, org, t)
@@ -862,8 +875,8 @@ class TestAwardConcentration:
 
     def test_top_suppliers_sorted(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "TopSupOrg")
-        c1  = make_company(repo, "TopSup1")
-        c2  = make_company(repo, "TopSup2")
+        c1 = make_company(repo, "TopSup1")
+        c2 = make_company(repo, "TopSup2")
         for i in range(3):
             t = make_tender(repo, f"T-TopSup1-{i}")
             issue(repo, org, t)
@@ -879,6 +892,7 @@ class TestAwardConcentration:
 # buyer_competitiveness
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBuyerCompetitiveness:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.buyer_competitiveness("ORG-MISSING")
@@ -886,7 +900,7 @@ class TestBuyerCompetitiveness:
 
     def test_fields_present(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "CompFields")
-        r   = bie.buyer_competitiveness(org)
+        r = bie.buyer_competitiveness(org)
         assert "competitiveness_score" in r
         assert "competitiveness_level" in r
         assert "components" in r
@@ -895,8 +909,8 @@ class TestBuyerCompetitiveness:
 
     def test_score_range(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "CompRange")
-        c1  = make_company(repo, "CompRangeCo1")
-        c2  = make_company(repo, "CompRangeCo2")
+        c1 = make_company(repo, "CompRangeCo1")
+        c2 = make_company(repo, "CompRangeCo2")
         for i in range(4):
             t = make_tender(repo, f"T-CompRange-{i}")
             issue(repo, org, t)
@@ -908,14 +922,15 @@ class TestBuyerCompetitiveness:
 
     def test_competitive_level_labels(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "LevelOrg")
-        r   = bie.buyer_competitiveness(org)
+        r = bie.buyer_competitiveness(org)
         assert r["competitiveness_level"] in (
-            "highly_competitive", "moderately_competitive", "low_competition"
+            "highly_competitive",
+            "moderately_competitive",
+            "low_competition",
         )
 
-    def test_high_bidder_count_increases_score(self, bie: BuyerIntelligenceEngine,
-                                                repo: BizRepository):
-        org_few  = make_org(repo, "FewBidOrg")
+    def test_high_bidder_count_increases_score(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
+        org_few = make_org(repo, "FewBidOrg")
         org_many = make_org(repo, "ManyBidOrg")
         # few: 1 bidder per tender
         for i in range(3):
@@ -932,7 +947,7 @@ class TestBuyerCompetitiveness:
             for c in companies:
                 bid(repo, c, t)
             award(repo, companies[i], t)
-        r_few  = bie.buyer_competitiveness(org_few)
+        r_few = bie.buyer_competitiveness(org_few)
         r_many = bie.buyer_competitiveness(org_many)
         assert r_many["competitiveness_score"] > r_few["competitiveness_score"]
 
@@ -941,6 +956,7 @@ class TestBuyerCompetitiveness:
 # buyer_timeline
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBuyerTimeline:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.buyer_timeline("ORG-MISSING")
@@ -948,7 +964,7 @@ class TestBuyerTimeline:
 
     def test_empty_timeline(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "EmptyTLOrg")
-        r   = bie.buyer_timeline(org)
+        r = bie.buyer_timeline(org)
         assert r["timeline"] == []
         assert r["years_active"] == 0
 
@@ -968,7 +984,7 @@ class TestBuyerTimeline:
             issue(repo, org, t)
         t_2023 = make_tender(repo, "T-TC-2023", date="2023-03-01")
         issue(repo, org, t_2023)
-        r    = bie.buyer_timeline(org)
+        r = bie.buyer_timeline(org)
         yr22 = next(row for row in r["timeline"] if row["year"] == 2022)
         assert yr22["tender_count"] == 3
 
@@ -995,8 +1011,8 @@ class TestBuyerTimeline:
 
     def test_top_winner_per_year(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "TopWinOrg")
-        c1  = make_company(repo, "TopWin1")
-        c2  = make_company(repo, "TopWin2")
+        c1 = make_company(repo, "TopWin1")
+        c2 = make_company(repo, "TopWin2")
         for i in range(3):
             t = make_tender(repo, f"T-TW1-2023-{i}", date="2023-06-01")
             issue(repo, org, t)
@@ -1004,7 +1020,7 @@ class TestBuyerTimeline:
         t_c2 = make_tender(repo, "T-TW2-2023", date="2023-07-01")
         issue(repo, org, t_c2)
         award(repo, c2, t_c2)
-        r    = bie.buyer_timeline(org)
+        r = bie.buyer_timeline(org)
         yr23 = next(row for row in r["timeline"] if row["year"] == 2023)
         assert yr23["top_winner"]["uid"] == c1
 
@@ -1013,6 +1029,7 @@ class TestBuyerTimeline:
 # tender_forecast
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestTenderForecast:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.tender_forecast("ORG-MISSING")
@@ -1020,9 +1037,9 @@ class TestTenderForecast:
 
     def test_no_dated_tenders(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "NoDateFcOrg")
-        t   = make_tender(repo, "T-FcNoDate")
+        t = make_tender(repo, "T-FcNoDate")
         issue(repo, org, t)
-        r   = bie.tender_forecast(org)
+        r = bie.tender_forecast(org)
         assert r["tenders_with_dates"] == 0
         assert r["forecast_basis"] == "no_dated_tenders"
         assert r["forecast_probability"] == pytest.approx(0.5)
@@ -1064,6 +1081,7 @@ class TestTenderForecast:
 # buyer_profile (full)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBuyerProfile:
     def test_missing_entity(self, bie: BuyerIntelligenceEngine):
         r = bie.buyer_profile("ORG-MISSING")
@@ -1071,26 +1089,38 @@ class TestBuyerProfile:
 
     def test_full_profile_keys(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "FullProfOrg")
-        c   = make_company(repo, "FullProfCo")
-        t   = make_tender(repo, "T-FP", date="2023-06-01", value=50000.0)
+        c = make_company(repo, "FullProfCo")
+        t = make_tender(repo, "T-FP", date="2023-06-01", value=50000.0)
         issue(repo, org, t)
         award(repo, c, t)
         r = bie.buyer_profile(org)
         assert "error" not in r
         for key in [
-            "uid", "name", "kind", "summary", "supplier_roster",
-            "preferred_suppliers", "supplier_loyalty", "supplier_diversity",
-            "buying_patterns", "procurement_seasonality", "preferred_industries",
-            "preferred_contract_sizes", "avg_procurement_value", "avg_bidder_count",
-            "award_concentration", "buyer_competitiveness", "buyer_timeline",
+            "uid",
+            "name",
+            "kind",
+            "summary",
+            "supplier_roster",
+            "preferred_suppliers",
+            "supplier_loyalty",
+            "supplier_diversity",
+            "buying_patterns",
+            "procurement_seasonality",
+            "preferred_industries",
+            "preferred_contract_sizes",
+            "avg_procurement_value",
+            "avg_bidder_count",
+            "award_concentration",
+            "buyer_competitiveness",
+            "buyer_timeline",
             "tender_forecast",
         ]:
             assert key in r, f"Missing key: {key}"
 
     def test_idempotent(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "IdempOrg")
-        c   = make_company(repo, "IdempCo")
-        t   = make_tender(repo, "T-Idemp")
+        c = make_company(repo, "IdempCo")
+        t = make_tender(repo, "T-Idemp")
         issue(repo, org, t)
         award(repo, c, t)
         r1 = bie.buyer_profile(org)
@@ -1099,13 +1129,13 @@ class TestBuyerProfile:
 
     def test_org_kind_in_profile(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "KindOrg")
-        r   = bie.buyer_profile(org)
+        r = bie.buyer_profile(org)
         assert r.get("kind") == "organization"
 
     def test_company_as_buyer(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         cmp = make_company(repo, "CompanyAsBuyer")
-        c2  = make_company(repo, "CaB-Supplier")
-        t   = make_tender(repo, "T-CaB")
+        c2 = make_company(repo, "CaB-Supplier")
+        t = make_tender(repo, "T-CaB")
         issue(repo, cmp, t)
         award(repo, c2, t)
         r = bie.buyer_profile(cmp)
@@ -1117,12 +1147,12 @@ class TestBuyerProfile:
 # Edge cases and confidence
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestEdgeCases:
-    def test_all_methods_return_confidence(self, bie: BuyerIntelligenceEngine,
-                                            repo: BizRepository):
+    def test_all_methods_return_confidence(self, bie: BuyerIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "ConfOrg")
-        c   = make_company(repo, "ConfCo")
-        t   = make_tender(repo, "T-Conf", date="2023-01-01", value=1000.0)
+        c = make_company(repo, "ConfCo")
+        t = make_tender(repo, "T-Conf", date="2023-01-01", value=1000.0)
         issue(repo, org, t)
         award(repo, c, t)
         for r in [

@@ -21,6 +21,7 @@ Relations created:
 
 Source tag: "bc_scraper_pg"
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,7 +30,7 @@ from typing import Any, Optional
 
 import psycopg2
 
-from ..domain import BizEntityKind, BizRelationKind, IdentityEvidence, EXTERNAL_ID_KEYS
+from ..domain import BizEntityKind, BizRelationKind, IdentityEvidence
 from ..domain.kinds import canonicalize
 from ..domain.results import ImportResult
 from ..repository._base import BizRepository
@@ -91,7 +92,7 @@ class BCScraperPGImporter(BaseImporter):
         # or a live psycopg2 connection (legacy / unit-test usage).
         if isinstance(conn, str):
             self._dsn: Optional[str] = conn
-            self._conn: Any = None          # not used when DSN is set
+            self._conn: Any = None  # not used when DSN is set
         else:
             self._dsn = None
             self._conn = conn
@@ -188,8 +189,14 @@ class BCScraperPGImporter(BaseImporter):
             cur = conn.cursor()
             try:
                 counts: dict = {}
-                for table in ("companies", "tenders", "permits", "contract_awards",
-                              "commercial_tenders", "arch_tenders"):
+                for table in (
+                    "companies",
+                    "tenders",
+                    "permits",
+                    "contract_awards",
+                    "commercial_tenders",
+                    "arch_tenders",
+                ):
                     try:
                         cur.execute(f"SELECT COUNT(*) FROM public.{table}")  # noqa: S608
                         counts[table] = cur.fetchone()[0]
@@ -248,10 +255,19 @@ class BCScraperPGImporter(BaseImporter):
 
         # ── shared attribute builder ───────────────────────────────────────
         def _build_attrs(
-            db_id, entity_role, canonical_company_id,
-            construction_score, total_projects, total_award_value,
-            award_count, primary_city, primary_province,
-            google_address, google_phone, primary_trade, dominant_sector,
+            db_id,
+            entity_role,
+            canonical_company_id,
+            construction_score,
+            total_projects,
+            total_award_value,
+            award_count,
+            primary_city,
+            primary_province,
+            google_address,
+            google_phone,
+            primary_trade,
+            dominant_sector,
         ) -> dict:
             attrs: dict = {"scraper_id": db_id}
             if _s(entity_role):
@@ -267,9 +283,12 @@ class BCScraperPGImporter(BaseImporter):
             if award_count:
                 attrs["award_count"] = award_count
             for k, v in [
-                ("city", primary_city), ("province", primary_province),
-                ("address", google_address), ("phone", google_phone),
-                ("primary_trade", primary_trade), ("dominant_sector", dominant_sector),
+                ("city", primary_city),
+                ("province", primary_province),
+                ("address", google_address),
+                ("phone", google_phone),
+                ("primary_trade", primary_trade),
+                ("dominant_sector", dominant_sector),
             ]:
                 if _s(v):
                     attrs[k] = _s(v)
@@ -301,12 +320,21 @@ class BCScraperPGImporter(BaseImporter):
 
         for row in all_rows:
             (
-                db_id, display_name, raw_name, entity_role,
-                canonical_company_id, construction_score,
-                total_projects, total_award_value, award_count,
-                primary_city, primary_province,
-                google_address, google_phone,
-                primary_trade, dominant_sector,
+                db_id,
+                display_name,
+                raw_name,
+                entity_role,
+                canonical_company_id,
+                construction_score,
+                total_projects,
+                total_award_value,
+                award_count,
+                primary_city,
+                primary_province,
+                google_address,
+                google_phone,
+                primary_trade,
+                dominant_sector,
             ) = row
 
             if _s(entity_role) == "applicant_alias":
@@ -318,16 +346,23 @@ class BCScraperPGImporter(BaseImporter):
                 continue
 
             attrs = _build_attrs(
-                db_id, entity_role, canonical_company_id,
-                construction_score, total_projects, total_award_value,
-                award_count, primary_city, primary_province,
-                google_address, google_phone, primary_trade, dominant_sector,
+                db_id,
+                entity_role,
+                canonical_company_id,
+                construction_score,
+                total_projects,
+                total_award_value,
+                award_count,
+                primary_city,
+                primary_province,
+                google_address,
+                google_phone,
+                primary_trade,
+                dominant_sector,
             )
 
             try:
-                _preserved_uid = self._uid_snapshot.get(
-                    (BizEntityKind.COMPANY.value, canonicalize(name))
-                )
+                _preserved_uid = self._uid_snapshot.get((BizEntityKind.COMPANY.value, canonicalize(name)))
                 entity, created = self.repo.put_entity(
                     kind=BizEntityKind.COMPANY,
                     name=name,
@@ -348,12 +383,21 @@ class BCScraperPGImporter(BaseImporter):
         # ── Pass 2: alias companies ────────────────────────────────────────
         for row in all_rows:
             (
-                db_id, display_name, raw_name, entity_role,
-                canonical_company_id, construction_score,
-                total_projects, total_award_value, award_count,
-                primary_city, primary_province,
-                google_address, google_phone,
-                primary_trade, dominant_sector,
+                db_id,
+                display_name,
+                raw_name,
+                entity_role,
+                canonical_company_id,
+                construction_score,
+                total_projects,
+                total_award_value,
+                award_count,
+                primary_city,
+                primary_province,
+                google_address,
+                google_phone,
+                primary_trade,
+                dominant_sector,
             ) = row
 
             if _s(entity_role) != "applicant_alias":
@@ -376,17 +420,24 @@ class BCScraperPGImporter(BaseImporter):
                 continue
 
             attrs = _build_attrs(
-                db_id, entity_role, canonical_company_id,
-                construction_score, total_projects, total_award_value,
-                award_count, primary_city, primary_province,
-                google_address, google_phone, primary_trade, dominant_sector,
+                db_id,
+                entity_role,
+                canonical_company_id,
+                construction_score,
+                total_projects,
+                total_award_value,
+                award_count,
+                primary_city,
+                primary_province,
+                google_address,
+                google_phone,
+                primary_trade,
+                dominant_sector,
             )
             attrs["alias_for_uid"] = canonical_uid
 
             try:
-                _preserved_alias_uid = self._uid_snapshot.get(
-                    (BizEntityKind.COMPANY_ALIAS.value, canonicalize(name))
-                )
+                _preserved_alias_uid = self._uid_snapshot.get((BizEntityKind.COMPANY_ALIAS.value, canonicalize(name)))
                 alias_entity, created = self.repo.put_entity(
                     kind=BizEntityKind.COMPANY_ALIAS,
                     name=name,
@@ -407,11 +458,13 @@ class BCScraperPGImporter(BaseImporter):
                         f"(graph uid={canonical_uid}) "
                         f"per public.companies.canonical_company_id"
                     ),
-                    evidence=[{
-                        "field":  "canonical_company_id",
-                        "value":  canonical_company_id,
-                        "source": _SOURCE,
-                    }],
+                    evidence=[
+                        {
+                            "field": "canonical_company_id",
+                            "value": canonical_company_id,
+                            "source": _SOURCE,
+                        }
+                    ],
                     source=_SOURCE,
                 )
                 self.repo.put_relation(
@@ -436,9 +489,12 @@ class BCScraperPGImporter(BaseImporter):
         logger.info(
             "companies: canonical=%d aliases=%d errors=%d",
             len(_canonical_scraper_id_to_uid),
-            sum(1 for v in self._company_id_to_uid.values()
+            sum(
+                1
+                for v in self._company_id_to_uid.values()
                 if v not in _canonical_scraper_id_to_uid.values()
-                or len([k for k, u in self._company_id_to_uid.items() if u == v]) > 1),
+                or len([k for k, u in self._company_id_to_uid.items() if u == v]) > 1
+            ),
             len(result.errors),
         )
         return result
@@ -451,75 +507,98 @@ class BCScraperPGImporter(BaseImporter):
         self._tender_title_to_uid: dict[str, str] = {}
 
         queries = [
-            ("tenders", """
+            (
+                "tenders",
+                """
                 SELECT id, title, organization, category, closing_date,
                        estimated_value, source, tender_id, url
                 FROM public.tenders
                 ORDER BY id
-            """),
-            ("commercial_tenders", """
+            """,
+            ),
+            (
+                "commercial_tenders",
+                """
                 SELECT id, title, company AS organization, category, deadline AS closing_date,
                        value AS estimated_value, source, tender_id, url
                 FROM public.commercial_tenders
                 ORDER BY id
-            """),
-            ("arch_tenders", """
+            """,
+            ),
+            (
+                "arch_tenders",
+                """
                 SELECT id, title, company AS organization, category, deadline AS closing_date,
                        value AS estimated_value, 'arch_tenders' AS source, tender_id, url
                 FROM public.arch_tenders
                 ORDER BY id
-            """),
+            """,
+            ),
         ]
 
         conn = self._get_source_conn()
         try:
             cur = conn.cursor()
             try:
-              for table, query in queries:
-                cur.execute(query)
-                while True:
-                    rows = cur.fetchmany(self._batch_size)
-                    if not rows:
-                        break
-                    for row in rows:
-                        db_id, title, org, category, closing_date, value, src, tender_id, url = row
+                for table, query in queries:
+                    cur.execute(query)
+                    while True:
+                        rows = cur.fetchmany(self._batch_size)
+                        if not rows:
+                            break
+                        for row in rows:
+                            (
+                                db_id,
+                                title,
+                                org,
+                                category,
+                                closing_date,
+                                value,
+                                src,
+                                tender_id,
+                                url,
+                            ) = row
 
-                        name = _s(title)
-                        if not name:
-                            result.warnings.append(f"{table}.id={db_id}: empty title, skipping")
-                            continue
+                            name = _s(title)
+                            if not name:
+                                result.warnings.append(f"{table}.id={db_id}: empty title, skipping")
+                                continue
 
-                        attrs: dict = {
-                            "scraper_id": db_id,
-                            "scraper_table": table,
-                        }
-                        for k, v in [
-                            ("organization", org), ("category", category),
-                            ("closing_date", closing_date), ("estimated_value", value),
-                            ("source", src), ("tender_id", tender_id), ("url", url),
-                        ]:
-                            if _s(v):
-                                attrs[k] = _s(v)
+                            attrs: dict = {
+                                "scraper_id": db_id,
+                                "scraper_table": table,
+                            }
+                            for k, v in [
+                                ("organization", org),
+                                ("category", category),
+                                ("closing_date", closing_date),
+                                ("estimated_value", value),
+                                ("source", src),
+                                ("tender_id", tender_id),
+                                ("url", url),
+                            ]:
+                                if _s(v):
+                                    attrs[k] = _s(v)
 
-                        try:
-                            _preserved_uid = self._uid_snapshot.get(
-                                (BizEntityKind.TENDER.value, canonicalize(name))
-                            )
-                            entity, created = self.repo.put_entity(
-                                kind=BizEntityKind.TENDER,
-                                name=name,
-                                attributes=attrs,
-                                source=_SOURCE,
-                                write_history=False,
-                                uid=_preserved_uid,
-                            )
-                            self._tender_title_to_uid[f"{table}:{db_id}"] = entity.uid
-                            if created:
-                                result.entities_created += 1
-                            else:
-                                result.entities_updated += 1
-                        except Exception as exc:
-                            result.errors.append(f"{table}.id={db_id}: {exc}")
+                            try:
+                                _preserved_uid = self._uid_snapshot.get(
+                                    (BizEntityKind.TENDER.value, canonicalize(name))
+                                )
+                                entity, created = self.repo.put_entity(
+                                    kind=BizEntityKind.TENDER,
+                                    name=name,
+                                    attributes=attrs,
+                                    source=_SOURCE,
+                                    write_history=False,
+                                    uid=_preserved_uid,
+                                )
+                                self._tender_title_to_uid[f"{table}:{db_id}"] = entity.uid
+                                if created:
+                                    result.entities_created += 1
+                                else:
+                                    result.entities_updated += 1
+                            except Exception as exc:
+                                result.errors.append(f"{table}.id={db_id}: {exc}")
             finally:
                 cur.close()
         finally:
@@ -527,7 +606,9 @@ class BCScraperPGImporter(BaseImporter):
 
         logger.info(
             "tenders: created=%d updated=%d errors=%d",
-            result.entities_created, result.entities_updated, len(result.errors),
+            result.entities_created,
+            result.entities_updated,
+            len(result.errors),
         )
         return result
 
@@ -571,8 +652,10 @@ class BCScraperPGImporter(BaseImporter):
 
         logger.info(
             "permits: created=%d updated=%d rels_created=%d errors=%d",
-            result.entities_created, result.entities_updated,
-            result.relations_created, len(result.errors),
+            result.entities_created,
+            result.entities_updated,
+            result.relations_created,
+            len(result.errors),
         )
         return result
 
@@ -580,26 +663,38 @@ class BCScraperPGImporter(BaseImporter):
         """Process one batch of permit rows inside a single transaction."""
         with self.repo.transaction():
             for row in rows:
-                (db_id, external_id, address, city, permit_type,
-                 project_value, applicant, contractor,
-                 lifecycle_status, src, company_id) = row
+                (
+                    db_id,
+                    external_id,
+                    address,
+                    city,
+                    permit_type,
+                    project_value,
+                    applicant,
+                    contractor,
+                    lifecycle_status,
+                    src,
+                    company_id,
+                ) = row
 
                 name = _s(external_id) or _s(address) or f"permit-{db_id}"
                 attrs: dict = {"scraper_id": db_id}
                 for k, v in [
-                    ("external_id", external_id), ("address", address),
-                    ("city", city), ("permit_type", permit_type),
-                    ("project_value", project_value), ("applicant", applicant),
+                    ("external_id", external_id),
+                    ("address", address),
+                    ("city", city),
+                    ("permit_type", permit_type),
+                    ("project_value", project_value),
+                    ("applicant", applicant),
                     ("contractor", contractor),
-                    ("lifecycle_status", lifecycle_status), ("source", src),
+                    ("lifecycle_status", lifecycle_status),
+                    ("source", src),
                 ]:
                     if _s(v):
                         attrs[k] = _s(v)
 
                 try:
-                    _preserved_uid = self._uid_snapshot.get(
-                        (BizEntityKind.PERMIT.value, canonicalize(name))
-                    )
+                    _preserved_uid = self._uid_snapshot.get((BizEntityKind.PERMIT.value, canonicalize(name)))
                     permit_e, created = self.repo.put_entity(
                         kind=BizEntityKind.PERMIT,
                         name=name,
@@ -656,25 +751,37 @@ class BCScraperPGImporter(BaseImporter):
                     if not rows:
                         break
                     for row in rows:
-                        (db_id, external_id, title, winner_company, award_value,
-                         currency, award_date, buyer_org, proc_category,
-                         src, company_id) = row
+                        (
+                            db_id,
+                            external_id,
+                            title,
+                            winner_company,
+                            award_value,
+                            currency,
+                            award_date,
+                            buyer_org,
+                            proc_category,
+                            src,
+                            company_id,
+                        ) = row
 
                         name = _s(title) or _s(external_id) or f"award-{db_id}"
                         attrs: dict = {"scraper_id": db_id}
                         for k, v in [
-                            ("external_id", external_id), ("winner_company", winner_company),
-                            ("award_value", award_value), ("currency", currency),
-                            ("award_date", award_date), ("buyer_organization", buyer_org),
-                            ("procurement_category", proc_category), ("source", src),
+                            ("external_id", external_id),
+                            ("winner_company", winner_company),
+                            ("award_value", award_value),
+                            ("currency", currency),
+                            ("award_date", award_date),
+                            ("buyer_organization", buyer_org),
+                            ("procurement_category", proc_category),
+                            ("source", src),
                         ]:
                             if _s(str(v) if v is not None else ""):
                                 attrs[k] = v if isinstance(v, (int, float)) else _s(v)
 
                         try:
-                            _preserved_uid = self._uid_snapshot.get(
-                                (BizEntityKind.CONTRACT.value, canonicalize(name))
-                            )
+                            _preserved_uid = self._uid_snapshot.get((BizEntityKind.CONTRACT.value, canonicalize(name)))
                             contract_e, created = self.repo.put_entity(
                                 kind=BizEntityKind.CONTRACT,
                                 name=name,
@@ -696,8 +803,10 @@ class BCScraperPGImporter(BaseImporter):
                                     kind=BizRelationKind.AWARDED_TO,
                                     target_uid=contract_e.uid,
                                     source=_SOURCE,
-                                    attributes={"award_date": _s(award_date),
-                                                "award_value": award_value},
+                                    attributes={
+                                        "award_date": _s(award_date),
+                                        "award_value": award_value,
+                                    },
                                 )
                                 if rc:
                                     result.relations_created += 1
@@ -735,8 +844,10 @@ class BCScraperPGImporter(BaseImporter):
 
         logger.info(
             "contract_awards: created=%d updated=%d rels_created=%d errors=%d",
-            result.entities_created, result.entities_updated,
-            result.relations_created, len(result.errors),
+            result.entities_created,
+            result.entities_updated,
+            result.relations_created,
+            len(result.errors),
         )
         return result
 
@@ -773,9 +884,7 @@ class BCScraperPGImporter(BaseImporter):
             if not name:
                 continue
             try:
-                _preserved_uid = self._uid_snapshot.get(
-                    (BizEntityKind.ORGANIZATION.value, canonicalize(name))
-                )
+                _preserved_uid = self._uid_snapshot.get((BizEntityKind.ORGANIZATION.value, canonicalize(name)))
                 _, created = self.repo.put_entity(
                     kind=BizEntityKind.ORGANIZATION,
                     name=name,
@@ -792,6 +901,8 @@ class BCScraperPGImporter(BaseImporter):
 
         logger.info(
             "organizations: created=%d updated=%d errors=%d",
-            result.entities_created, result.entities_updated, len(result.errors),
+            result.entities_created,
+            result.entities_updated,
+            len(result.errors),
         )
         return result

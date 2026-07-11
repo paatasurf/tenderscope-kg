@@ -2,11 +2,10 @@
 Tests for the BizRepository layer.
 Covers: UID allocation, entity create/update/dedup, relations, history, FTS, stats.
 """
+
 from __future__ import annotations
 
 import sqlite3
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -23,6 +22,7 @@ def repo() -> BizRepositorySQLite:
 
 
 # ── UID allocation ─────────────────────────────────────────────────────────────
+
 
 def test_uid_format(repo):
     e, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme")
@@ -48,6 +48,7 @@ def test_uid_per_kind_independent(repo):
 
 
 # ── Entity create / dedup / update ────────────────────────────────────────────
+
 
 def test_entity_create(repo):
     e, created = repo.put_entity(BizEntityKind.COMPANY, "Acme Corp")
@@ -92,6 +93,7 @@ def test_entity_not_found(repo):
 
 
 # ── Relations ──────────────────────────────────────────────────────────────────
+
 
 def test_put_relation(repo):
     company, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme Corp")
@@ -151,6 +153,7 @@ def test_get_neighbors_kind_filter(repo):
 
 # ── History ───────────────────────────────────────────────────────────────────
 
+
 def test_entity_history_written(repo):
     e, _ = repo.put_entity(BizEntityKind.COMPANY, "Acme", write_history=True)
     history = repo.entity_history(e.uid)
@@ -168,6 +171,7 @@ def test_entity_history_appends_on_update(repo):
 
 # ── FTS ───────────────────────────────────────────────────────────────────────
 
+
 def test_fts_search(repo):
     repo.put_entity(BizEntityKind.COMPANY, "Pacific Rim Construction")
     repo.put_entity(BizEntityKind.COMPANY, "Atlantic Dredging")
@@ -183,6 +187,7 @@ def test_fts_empty_query(repo):
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
+
 
 def test_stats(repo):
     repo.put_entity(BizEntityKind.COMPANY, "Acme")

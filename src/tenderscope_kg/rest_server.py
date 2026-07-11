@@ -34,6 +34,7 @@ company lookups:
 The resolution logic for scraper IDs lives in BizQueryEngine.company_by_scraper_id()
 so this file contains no lookup branching itself.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

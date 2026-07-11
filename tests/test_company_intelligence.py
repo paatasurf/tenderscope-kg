@@ -5,18 +5,19 @@ Each test builds a minimal in-memory graph, runs one or more CIE methods,
 and asserts on both the returned data and the evidence references.
 No files are touched; everything runs in SQLite :memory:.
 """
+
 from __future__ import annotations
 
 import sqlite3
 
 import pytest
 
+from tenderscope_kg.company_intelligence import CompanyIntelligenceEngine, _parse_value
 from tenderscope_kg.domain import BizEntityKind, BizRelationKind
 from tenderscope_kg.repository._sqlite import BizRepositorySQLite
-from tenderscope_kg.company_intelligence import CompanyIntelligenceEngine, _parse_value
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def repo() -> BizRepositorySQLite:
@@ -32,6 +33,7 @@ def cie(repo: BizRepositorySQLite) -> CompanyIntelligenceEngine:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _company(repo, name, attrs=None):
     e, _ = repo.put_entity(BizEntityKind.COMPANY, name, attributes=attrs or {}, source="test")
@@ -69,15 +71,14 @@ def _industry(repo, name):
 
 
 def _rel(repo, src_uid, kind, tgt_uid, attrs=None, valid_from=None):
-    r, _ = repo.put_relation(src_uid, kind, tgt_uid,
-                              source="test", attributes=attrs or {},
-                              valid_from=valid_from)
+    r, _ = repo.put_relation(src_uid, kind, tgt_uid, source="test", attributes=attrs or {}, valid_from=valid_from)
     return r
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # _require_company (error cases)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def test_require_company_not_found(cie):
     result = cie.company_profile("CMP-99999999")
@@ -96,6 +97,7 @@ def test_require_company_wrong_kind(repo, cie):
 # company_summary
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def test_summary_basic_fields(repo, cie):
     co = _company(repo, "Acme Construction Ltd")
     result = cie.company_summary(co.uid)
@@ -111,10 +113,22 @@ def test_summary_counts_won_tenders(repo, cie):
     co = _company(repo, "Builder Corp")
     t1 = _tender(repo, "Bridge Repair", {"contract_value": "500000"})
     t2 = _tender(repo, "Road Work", {"contract_value": "300000"})
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t1.uid,
-         attrs={"contract_value": 500000}, valid_from="2025/06/01")
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t2.uid,
-         attrs={"contract_value": 300000}, valid_from="2025/07/01")
+    _rel(
+        repo,
+        co.uid,
+        BizRelationKind.AWARDED_TO,
+        t1.uid,
+        attrs={"contract_value": 500000},
+        valid_from="2025/06/01",
+    )
+    _rel(
+        repo,
+        co.uid,
+        BizRelationKind.AWARDED_TO,
+        t2.uid,
+        attrs={"contract_value": 300000},
+        valid_from="2025/07/01",
+    )
 
     result = cie.company_summary(co.uid)
     assert result["tenders_won"] == 2
@@ -169,14 +183,25 @@ def test_summary_confidence_increases_with_edges(repo, cie):
 # company_stats
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def test_stats_total_contract_value(repo, cie):
     co = _company(repo, "ValueCo")
     t1 = _tender(repo, "Contract A", {"contract_value": "CAD 500,000.00"})
     t2 = _tender(repo, "Contract B", {"contract_value": "CAD 300,000.00"})
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t1.uid,
-         attrs={"contract_value": 500000, "award_date": "2025/01/01"})
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t2.uid,
-         attrs={"contract_value": 300000, "award_date": "2025/06/01"})
+    _rel(
+        repo,
+        co.uid,
+        BizRelationKind.AWARDED_TO,
+        t1.uid,
+        attrs={"contract_value": 500000, "award_date": "2025/01/01"},
+    )
+    _rel(
+        repo,
+        co.uid,
+        BizRelationKind.AWARDED_TO,
+        t2.uid,
+        attrs={"contract_value": 300000, "award_date": "2025/06/01"},
+    )
 
     result = cie.company_stats(co.uid)
     assert result["total_contract_value"] == pytest.approx(800000.0)
@@ -189,8 +214,7 @@ def test_stats_average_contract_value(repo, cie):
     co = _company(repo, "AvgCo")
     for val in [100000, 200000, 300000]:
         t = _tender(repo, f"T{val}")
-        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-             attrs={"contract_value": val})
+        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid, attrs={"contract_value": val})
     result = cie.company_stats(co.uid)
     assert result["average_contract_value"] == pytest.approx(200000.0)
 
@@ -211,8 +235,13 @@ def test_stats_yearly_breakdown(repo, cie):
     co = _company(repo, "YearlyCo")
     for year, val in [("2024", 100000), ("2024", 200000), ("2025", 500000)]:
         t = _tender(repo, f"Tender {year} {val}")
-        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-             attrs={"contract_value": val, "award_date": f"{year}/01/01"})
+        _rel(
+            repo,
+            co.uid,
+            BizRelationKind.AWARDED_TO,
+            t.uid,
+            attrs={"contract_value": val, "award_date": f"{year}/01/01"},
+        )
 
     result = cie.company_stats(co.uid)
     yearly = result["yearly_stats"]
@@ -241,10 +270,20 @@ def test_stats_activity_dates(repo, cie):
     co = _company(repo, "DateCo")
     t1 = _tender(repo, "Early Tender")
     t2 = _tender(repo, "Late Tender")
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t1.uid,
-         attrs={"award_date": "2023/01/01", "contract_value": 100000})
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t2.uid,
-         attrs={"award_date": "2026/06/01", "contract_value": 200000})
+    _rel(
+        repo,
+        co.uid,
+        BizRelationKind.AWARDED_TO,
+        t1.uid,
+        attrs={"award_date": "2023/01/01", "contract_value": 100000},
+    )
+    _rel(
+        repo,
+        co.uid,
+        BizRelationKind.AWARDED_TO,
+        t2.uid,
+        attrs={"award_date": "2026/06/01", "contract_value": 200000},
+    )
 
     result = cie.company_stats(co.uid)
     assert result["first_activity"] is not None
@@ -255,6 +294,7 @@ def test_stats_activity_dates(repo, cie):
 # ══════════════════════════════════════════════════════════════════════════════
 # company_buyers
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def test_buyers_via_tender_issued_by(repo, cie):
     co = _company(repo, "BuyerCo")
@@ -292,6 +332,7 @@ def test_buyers_empty_when_no_tenders(repo, cie):
 # ══════════════════════════════════════════════════════════════════════════════
 # company_competitors
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def test_competitors_via_shared_tender(repo, cie):
     co_a = _company(repo, "Alpha Builders")
@@ -363,12 +404,12 @@ def test_competitors_no_activity(repo, cie):
 # company_contracts
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def test_contracts_sorted_by_value(repo, cie):
     co = _company(repo, "SortCo")
     for val in [100000, 500000, 250000]:
         t = _tender(repo, f"T{val}")
-        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-             attrs={"contract_value": val})
+        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid, attrs={"contract_value": val})
 
     result = cie.company_contracts(co.uid)
     values = [c["contract_value"] for c in result["contracts"] if c.get("contract_value")]
@@ -379,8 +420,7 @@ def test_contracts_total_value(repo, cie):
     co = _company(repo, "TotalCo")
     for val in [200000, 300000]:
         t = _tender(repo, f"T{val}")
-        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-             attrs={"contract_value": val})
+        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid, attrs={"contract_value": val})
 
     result = cie.company_contracts(co.uid)
     assert result["total_value"] == pytest.approx(500000.0)
@@ -391,8 +431,7 @@ def test_contracts_total_value(repo, cie):
 def test_contracts_evidence_path(repo, cie):
     co = _company(repo, "PathCo2")
     t = _tender(repo, "Path Tender")
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-         attrs={"contract_value": 100000})
+    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid, attrs={"contract_value": 100000})
 
     result = cie.company_contracts(co.uid)
     assert len(result["contracts"]) == 1
@@ -413,6 +452,7 @@ def test_contracts_empty(repo, cie):
 # ══════════════════════════════════════════════════════════════════════════════
 # company_tenders
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def test_tenders_won_vs_submitted(repo, cie):
     co = _company(repo, "TenderCo")
@@ -455,14 +495,13 @@ def test_tenders_category_field(repo, cie):
 # company_timeline
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def test_timeline_sorted_chronologically(repo, cie):
     co = _company(repo, "TimeCo")
     t1 = _tender(repo, "Late Tender")
     t2 = _tender(repo, "Early Tender")
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t1.uid,
-         valid_from="2026/06/01")
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t2.uid,
-         valid_from="2024/01/01")
+    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t1.uid, valid_from="2026/06/01")
+    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t2.uid, valid_from="2024/01/01")
 
     result = cie.company_timeline(co.uid)
     events = result["events"]
@@ -473,8 +512,7 @@ def test_timeline_sorted_chronologically(repo, cie):
 def test_timeline_event_structure(repo, cie):
     co = _company(repo, "EventCo")
     t = _tender(repo, "Event Tender", {"award_date": "2025/05/15"})
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-         valid_from="2025/05/15")
+    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid, valid_from="2025/05/15")
 
     result = cie.company_timeline(co.uid)
     assert result["event_count"] >= 1
@@ -489,8 +527,7 @@ def test_timeline_yearly_summary(repo, cie):
     co = _company(repo, "YearTimeCo")
     for i, year in enumerate(["2024", "2024", "2025"]):
         t = _tender(repo, f"T-{year}-idx{i}")
-        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-             valid_from=f"{year}/01/01")
+        _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid, valid_from=f"{year}/01/01")
 
     result = cie.company_timeline(co.uid)
     yearly = result["yearly_activity"]
@@ -512,6 +549,7 @@ def test_timeline_empty_no_dates(repo, cie):
 # ══════════════════════════════════════════════════════════════════════════════
 # company_locations
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def test_locations_cities_and_provinces(repo, cie):
     co = _company(repo, "LocCo")
@@ -558,6 +596,7 @@ def test_locations_empty(repo, cie):
 # company_industries
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def test_industries_direct_relation(repo, cie):
     co = _company(repo, "IndCo")
     ind = _industry(repo, "Construction")
@@ -594,13 +633,19 @@ def test_industries_inferred_evidence_count(repo, cie):
 # company_profile (integration)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def test_profile_assembles_all_subqueries(repo, cie):
     co = _company(repo, "ProfileCo")
     t = _tender(repo, "Big Contract", {"contract_value": "CAD 500,000"})
     org = _org(repo, "Buyer Org")
     city = _city(repo, "Vancouver")
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-         attrs={"contract_value": 500000, "award_date": "2025/05/01"})
+    _rel(
+        repo,
+        co.uid,
+        BizRelationKind.AWARDED_TO,
+        t.uid,
+        attrs={"contract_value": 500000, "award_date": "2025/05/01"},
+    )
     _rel(repo, t.uid, BizRelationKind.ISSUED_BY, org.uid)
     _rel(repo, co.uid, BizRelationKind.IN_CITY, city.uid)
 
@@ -627,8 +672,13 @@ def test_profile_no_nested_errors(repo, cie):
     """A well-formed company with relations should not produce any nested errors."""
     co = _company(repo, "CleanProfileCo")
     t = _tender(repo, "Clean Tender", {"contract_value": "100000"})
-    _rel(repo, co.uid, BizRelationKind.AWARDED_TO, t.uid,
-         attrs={"contract_value": 100000, "award_date": "2025/01/01"})
+    _rel(
+        repo,
+        co.uid,
+        BizRelationKind.AWARDED_TO,
+        t.uid,
+        attrs={"contract_value": 100000, "award_date": "2025/01/01"},
+    )
 
     result = cie.company_profile(co.uid)
     assert "error" not in result
@@ -640,6 +690,7 @@ def test_profile_no_nested_errors(repo, cie):
 # ══════════════════════════════════════════════════════════════════════════════
 # Graph traversal queries
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def test_companies_by_city(repo, cie):
     co1 = _company(repo, "Vancouver Builder A")
@@ -680,7 +731,7 @@ def test_companies_by_province_not_found(repo, cie):
 
 def test_most_connected_companies(repo, cie):
     co_many = _company(repo, "Connected Corp")
-    co_few = _company(repo, "Isolated Corp")
+    _company(repo, "Isolated Corp")
     for i in range(5):
         t = _tender(repo, f"Connected Tender {i}")
         _rel(repo, co_many.uid, BizRelationKind.AWARDED_TO, t.uid)
@@ -734,6 +785,7 @@ def test_top_competitors_ranking(repo, cie):
 # ══════════════════════════════════════════════════════════════════════════════
 # Helper function unit tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def test_parse_value_int():
     assert _parse_value(500000) == pytest.approx(500000.0)

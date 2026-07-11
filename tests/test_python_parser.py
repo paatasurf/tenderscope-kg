@@ -1,8 +1,9 @@
 """Tests for the Python parser."""
-import pytest
-from tenderscope_kg.parsers.python_parser import PythonParser
-from tenderscope_kg.models import EntityKind, RelationKind
 
+import pytest
+
+from tenderscope_kg.models import EntityKind, RelationKind
+from tenderscope_kg.parsers.python_parser import PythonParser
 
 SOURCE = '''\
 """Module docstring."""

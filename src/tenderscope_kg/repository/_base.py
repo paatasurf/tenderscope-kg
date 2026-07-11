@@ -34,16 +34,22 @@ BizRepositoryPG      — PRODUCTION implementation.  PostgreSQL with graph schem
 FakeBizRepository    — TEST ARTIFACT.  In-memory.  Unit tests only.
                         Lives in tests/fakes/. Not shipped in this package.
 """
+
 from __future__ import annotations
 
-import sqlite3
 from abc import ABC, abstractmethod
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager
 from typing import Optional
 
 from ..domain import (
-    BizEntity, BizEntityKind, BizRelation, BizRelationKind, canonicalize,
-    CompanyIdentity, IdentityEvidence, EXTERNAL_ID_KEYS,
+    EXTERNAL_ID_KEYS,
+    BizEntity,
+    BizEntityKind,
+    BizRelation,
+    BizRelationKind,
+    CompanyIdentity,
+    IdentityEvidence,
+    canonicalize,
 )
 
 
@@ -225,7 +231,8 @@ class BizRepository(ABC):
         if entity.kind != BizEntityKind.COMPANY_ALIAS:
             return entity
         neighbours = self.get_neighbors(
-            uid, direction="out",
+            uid,
+            direction="out",
             kinds=[BizRelationKind.ALIAS_OF],
         )
         for _rel, neighbour in neighbours:
@@ -370,8 +377,7 @@ class BizRepository(ABC):
             raise KeyError(f"Company not found: {company_uid}")
         if entity.kind != BizEntityKind.COMPANY:
             raise ValueError(
-                f"{company_uid} is kind={entity.kind.value}, "
-                "attach_identifier only applies to COMPANY entities"
+                f"{company_uid} is kind={entity.kind.value}, attach_identifier only applies to COMPANY entities"
             )
         updated, _ = self.put_entity(
             kind=BizEntityKind.COMPANY,
@@ -402,60 +408,64 @@ class BizRepository(ABC):
         # ── Collect aliases (COMPANY_ALIAS nodes pointing in via ALIAS_OF) ──
         aliases: list[dict] = []
         for rel, neighbour in self.get_neighbors(
-            company_uid, direction="in",
+            company_uid,
+            direction="in",
             kinds=[BizRelationKind.ALIAS_OF],
         ):
-            ev = IdentityEvidence.from_dict(rel.attributes) \
-                if rel.attributes else \
-                IdentityEvidence(
+            ev = (
+                IdentityEvidence.from_dict(rel.attributes)
+                if rel.attributes
+                else IdentityEvidence(
                     confidence=rel.confidence,
                     reason="alias_of",
                     explanation=f"{neighbour.name} is an alias of {entity.name}",
                 )
-            aliases.append({
-                "uid":        neighbour.uid,
-                "name":       neighbour.name,
-                "confidence": ev.confidence,
-                "reason":     ev.reason,
-                "explanation":ev.explanation,
-                "evidence":   ev.evidence,
-                "source":     rel.source,
-            })
+            )
+            aliases.append(
+                {
+                    "uid": neighbour.uid,
+                    "name": neighbour.name,
+                    "confidence": ev.confidence,
+                    "reason": ev.reason,
+                    "explanation": ev.explanation,
+                    "evidence": ev.evidence,
+                    "source": rel.source,
+                }
+            )
 
         # ── Extract external identifiers from attributes ──────────────────
         known_id_values = set(EXTERNAL_ID_KEYS.values())
-        external_ids = {
-            k: v for k, v in entity.attributes.items()
-            if k in known_id_values
-        }
-        other_attrs = {
-            k: v for k, v in entity.attributes.items()
-            if k not in known_id_values
-        }
+        external_ids = {k: v for k, v in entity.attributes.items() if k in known_id_values}
+        other_attrs = {k: v for k, v in entity.attributes.items() if k not in known_id_values}
 
         # ── Collect SAME_AS merge candidates ─────────────────────────────
         merge_candidates: list[dict] = []
         for rel, neighbour in self.get_neighbors(
-            company_uid, direction="both",
+            company_uid,
+            direction="both",
             kinds=[BizRelationKind.SAME_AS],
         ):
             if neighbour.kind != BizEntityKind.COMPANY:
                 continue
-            ev = IdentityEvidence.from_dict(rel.attributes) \
-                if rel.attributes else \
-                IdentityEvidence(
+            ev = (
+                IdentityEvidence.from_dict(rel.attributes)
+                if rel.attributes
+                else IdentityEvidence(
                     confidence=rel.confidence,
                     reason="same_as",
                     explanation=f"{entity.name} may be the same company as {neighbour.name}",
                 )
-            merge_candidates.append({
-                "uid":        neighbour.uid,
-                "name":       neighbour.name,
-                "confidence": ev.confidence,
-                "reason":     ev.reason,
-                "explanation":ev.explanation,
-                "evidence":   ev.evidence,
-            })
+            )
+            merge_candidates.append(
+                {
+                    "uid": neighbour.uid,
+                    "name": neighbour.name,
+                    "confidence": ev.confidence,
+                    "reason": ev.reason,
+                    "explanation": ev.explanation,
+                    "evidence": ev.evidence,
+                }
+            )
 
         return CompanyIdentity(
             company_uid=entity.uid,

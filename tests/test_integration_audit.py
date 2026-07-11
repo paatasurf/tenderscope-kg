@@ -17,29 +17,29 @@ Coverage:
 - KGServer._dispatch     → routes every biz_* call and intelligence call correctly
 - _get_ede fix           → path resolved identically to _get_biz_engine
 """
+
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
-from unittest.mock import MagicMock, patch, call
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tenderscope_kg.domain import BizEntityKind, BizRelationKind
-from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 from tenderscope_kg.biz_query_engine import BizQueryEngine
+from tenderscope_kg.buyer_intelligence import BuyerIntelligenceEngine
 from tenderscope_kg.company_intelligence import CompanyIntelligenceEngine
 from tenderscope_kg.competitive_intelligence import CompetitiveIntelligenceEngine
-from tenderscope_kg.relationship_intelligence import RelationshipIntelligenceEngine
-from tenderscope_kg.buyer_intelligence import BuyerIntelligenceEngine
-from tenderscope_kg.opportunity_intelligence import OpportunityIntelligenceEngine
+from tenderscope_kg.domain import BizEntityKind, BizRelationKind
 from tenderscope_kg.executive_decision import ExecutiveDecisionEngine
-
+from tenderscope_kg.opportunity_intelligence import OpportunityIntelligenceEngine
+from tenderscope_kg.relationship_intelligence import RelationshipIntelligenceEngine
+from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Shared fixtures
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @pytest.fixture
 def repo():
@@ -89,9 +89,9 @@ def rich_repo(repo):
 
     buyer_x = _org(repo, "City of Vancouver")
     buyer_y = _org(repo, "Province of BC")
-    ind     = _industry(repo, "Construction")
+    ind = _industry(repo, "Construction")
 
-    ind_e, _  = repo.put_entity(BizEntityKind.INDUSTRY, "Construction")
+    ind_e, _ = repo.put_entity(BizEntityKind.INDUSTRY, "Construction")
     city_e, _ = repo.put_entity(BizEntityKind.CITY, "Vancouver")
 
     _link(repo, co_a.uid, BizRelationKind.IN_INDUSTRY, ind.uid)
@@ -100,8 +100,7 @@ def rich_repo(repo):
 
     wins = []
     for i in range(1, 4):
-        t = _tender(repo, f"Win Tender {i}",
-                    {"value": 200_000 * i, "award_date": f"202{i}-05-01"})
+        t = _tender(repo, f"Win Tender {i}", {"value": 200_000 * i, "award_date": f"202{i}-05-01"})
         _link(repo, t.uid, BizRelationKind.ISSUED_BY, buyer_x.uid)
         _link(repo, co_a.uid, BizRelationKind.AWARDED_TO, t.uid)
         _link(repo, co_b.uid, BizRelationKind.SUBMITTED_BID, t.uid)
@@ -117,20 +116,25 @@ def rich_repo(repo):
     _link(repo, t_y.uid, BizRelationKind.ISSUED_BY, buyer_y.uid)
     _link(repo, co_a.uid, BizRelationKind.AWARDED_TO, t_y.uid)
 
-    t_open = _tender(repo, "Open Opportunity",
-                     {"value": 400_000, "closing_date": "2028-03-01"})
+    t_open = _tender(repo, "Open Opportunity", {"value": 400_000, "closing_date": "2028-03-01"})
     _link(repo, t_open.uid, BizRelationKind.ISSUED_BY, buyer_x.uid)
 
     return {
-        "co_a": co_a, "co_b": co_b, "co_c": co_c,
-        "buyer_x": buyer_x, "buyer_y": buyer_y,
-        "industry": ind, "wins": wins, "open": t_open,
+        "co_a": co_a,
+        "co_b": co_b,
+        "co_c": co_c,
+        "buyer_x": buyer_x,
+        "buyer_y": buyer_y,
+        "industry": ind,
+        "wins": wins,
+        "open": t_open,
     }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. biz_related_companies → subset of CIE / CeI results
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestBizRelatedCompaniesVsIntelligenceEngines:
     """
@@ -141,9 +145,9 @@ class TestBizRelatedCompaniesVsIntelligenceEngines:
     """
 
     def test_biz_related_subset_of_cie_competitors(self, repo, rich_repo):
-        bqe  = BizQueryEngine(repo)
-        cie  = CompanyIntelligenceEngine(repo)
-        uid  = rich_repo["co_a"].uid
+        bqe = BizQueryEngine(repo)
+        cie = CompanyIntelligenceEngine(repo)
+        uid = rich_repo["co_a"].uid
 
         biz_result = bqe.related_companies(uid)
         cie_result = cie.company_competitors(uid, limit=50)
@@ -156,14 +160,13 @@ class TestBizRelatedCompaniesVsIntelligenceEngines:
         # So the union covers both; verify they share at least the direct co-bidders.
         # co_b appears in both; the key invariant is biz finds at least what CIE finds.
         assert cie_uids.issubset(biz_uids | {uid}), (
-            f"cie_competitors found UIDs not reachable via 2-hop biz walk: "
-            f"{cie_uids - biz_uids - {uid}}"
+            f"cie_competitors found UIDs not reachable via 2-hop biz walk: {cie_uids - biz_uids - {uid}}"
         )
 
     def test_biz_related_subset_of_cei_direct_competitors(self, repo, rich_repo):
-        bqe  = BizQueryEngine(repo)
-        cei  = CompetitiveIntelligenceEngine(repo)
-        uid  = rich_repo["co_a"].uid
+        bqe = BizQueryEngine(repo)
+        cei = CompetitiveIntelligenceEngine(repo)
+        uid = rich_repo["co_a"].uid
 
         biz_result = bqe.related_companies(uid)
         cei_result = cei.direct_competitors(uid, limit=50)
@@ -175,8 +178,7 @@ class TestBizRelatedCompaniesVsIntelligenceEngines:
         # Both should find co_b and co_c (they co-bid with co_a on the same tenders).
         # Verify all CeI competitors are reachable via the biz graph walk.
         assert cei_uids.issubset(biz_uids | {uid}), (
-            f"cei_direct_competitors found UIDs not reachable via 2-hop biz walk: "
-            f"{cei_uids - biz_uids - {uid}}"
+            f"cei_direct_competitors found UIDs not reachable via 2-hop biz walk: {cei_uids - biz_uids - {uid}}"
         )
 
     def test_cie_competitors_richer_than_biz_related(self, repo, rich_repo):
@@ -203,6 +205,7 @@ class TestBizRelatedCompaniesVsIntelligenceEngines:
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. biz_contracts → subset of cie_contracts
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestBizContractsVsCIEContracts:
     """
@@ -265,6 +268,7 @@ class TestBizContractsVsCIEContracts:
 # 3. biz_entity (company) → subset of cie_profile
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBizEntityVsCIEProfile:
     """
     biz_entity for a company returns raw entity + neighbours.
@@ -316,6 +320,7 @@ class TestBizEntityVsCIEProfile:
 # 4. oie_executive_summary scope vs ede_executive_decision scope
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestOIESummaryVsEDEDecision:
     """
     oie_executive_summary = opportunity pipeline only.
@@ -366,8 +371,14 @@ class TestOIESummaryVsEDEDecision:
         oie_r = oie.executive_summary(uid, limit=3)
         ede_r = ede.executive_decision(uid, opportunity_limit=3)
 
-        ede_only_keys = {"market_position", "relationship_map", "strategic_priorities",
-                         "risk_register", "buyer_landscape", "situation"}
+        ede_only_keys = {
+            "market_position",
+            "relationship_map",
+            "strategic_priorities",
+            "risk_register",
+            "buyer_landscape",
+            "situation",
+        }
         for key in ede_only_keys:
             assert key in ede_r, f"EDE missing key: {key}"
             assert key not in oie_r, f"OIE summary unexpectedly has EDE key: {key}"
@@ -383,6 +394,7 @@ class TestOIESummaryVsEDEDecision:
 # 5. EDE orchestrates all five sub-engines (not re-implementing logic)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestEDEDelegatestoSubEngines:
     """
     Verify EDE exclusively delegates to CIE / RIE / CeI / BIE / OIE.
@@ -396,7 +408,7 @@ class TestEDEDelegatestoSubEngines:
         uid = rich_repo["co_a"].uid
 
         ede_sit = ede.company_situation(uid)
-        cei_wr  = cei.win_rate(uid)
+        cei_wr = cei.win_rate(uid)
 
         # EDE situation win_rate must match CeI win_rate
         assert abs(ede_sit.get("win_rate", 0) - cei_wr.get("win_rate", 0)) < 0.001
@@ -406,9 +418,9 @@ class TestEDEDelegatestoSubEngines:
         cei = CompetitiveIntelligenceEngine(repo)
         uid = rich_repo["co_a"].uid
 
-        ede_mp  = ede.market_position(uid)
+        ede_mp = ede.market_position(uid)
         # CeI competitive_pressure returns key 'competitive_pressure_score'
-        cei_cp  = cei.competitive_pressure(uid)
+        cei_cp = cei.competitive_pressure(uid)
         cei_score = cei_cp.get("competitive_pressure_score", cei_cp.get("pressure_score", 0))
 
         assert abs(ede_mp.get("pressure_score", 0) - cei_score) < 0.001
@@ -456,7 +468,7 @@ class TestEDEDelegatestoSubEngines:
         rie = RelationshipIntelligenceEngine(repo)
         uid = rich_repo["co_a"].uid
 
-        ede_rm   = ede.relationship_map(uid)
+        ede_rm = ede.relationship_map(uid)
         rie_infer = rie.infer_relationships(uid, limit=50)
 
         assert "error" not in ede_rm
@@ -476,6 +488,7 @@ class TestEDEDelegatestoSubEngines:
 # 6. _get_ede path resolution matches _get_biz_engine
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestGetEdePathResolution:
     """
     Verify that _get_ede resolves the DB path as
@@ -490,8 +503,12 @@ class TestGetEdePathResolution:
 
         class FakeDB:
             biz_repo = MagicMock()
-            def connect(self): pass
-            def close(self): pass
+
+            def connect(self):
+                pass
+
+            def close(self):
+                pass
 
         def fake_graphdb(path):
             captured["path"] = Path(path)
@@ -510,8 +527,12 @@ class TestGetEdePathResolution:
 
         class FakeDB:
             biz_repo = MagicMock()
-            def connect(self): pass
-            def close(self): pass
+
+            def connect(self):
+                pass
+
+            def close(self):
+                pass
 
         def fake_graphdb(path):
             captured["path"] = Path(path)
@@ -529,8 +550,12 @@ class TestGetEdePathResolution:
 
         class FakeDB:
             biz_repo = MagicMock()
-            def connect(self): pass
-            def close(self): pass
+
+            def connect(self):
+                pass
+
+            def close(self):
+                pass
 
         def fake_graphdb_ede(path):
             paths["ede"] = Path(path)
@@ -549,14 +574,13 @@ class TestGetEdePathResolution:
         with patch.object(cli_module, "GraphDB", side_effect=fake_graphdb_biz):
             cli_module._get_biz_engine(repo_str)
 
-        assert paths["ede"] == paths["biz"], (
-            f"_get_ede path {paths['ede']} != _get_biz_engine path {paths['biz']}"
-        )
+        assert paths["ede"] == paths["biz"], f"_get_ede path {paths['ede']} != _get_biz_engine path {paths['biz']}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 7. KGServer dispatches all engine groups correctly
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestKGServerDispatch:
     """
@@ -566,20 +590,20 @@ class TestKGServerDispatch:
 
     @pytest.fixture
     def server(self):
-        from tenderscope_kg.mcp_server import KGServer
         from tenderscope_kg.db import GraphDB
+        from tenderscope_kg.mcp_server import KGServer
 
-        with patch.object(GraphDB, "__init__", return_value=None), \
-             patch.object(GraphDB, "connect", return_value=None), \
-             patch("tenderscope_kg.mcp_server.QueryEngine"), \
-             patch("tenderscope_kg.mcp_server.BizQueryEngine"), \
-             patch("tenderscope_kg.mcp_server.CompanyIntelligenceEngine"), \
-             patch("tenderscope_kg.mcp_server.RelationshipIntelligenceEngine"), \
-             patch("tenderscope_kg.mcp_server.CompetitiveIntelligenceEngine"), \
-             patch("tenderscope_kg.mcp_server.BuyerIntelligenceEngine"), \
-             patch("tenderscope_kg.mcp_server.OpportunityIntelligenceEngine"), \
-             patch("tenderscope_kg.mcp_server.ExecutiveDecisionEngine"):
-
+        with (
+            patch.object(GraphDB, "__init__", return_value=None),
+            patch.object(GraphDB, "connect", return_value=None),
+            patch("tenderscope_kg.server_engines.BizQueryEngine"),
+            patch("tenderscope_kg.server_engines.CompanyIntelligenceEngine"),
+            patch("tenderscope_kg.server_engines.RelationshipIntelligenceEngine"),
+            patch("tenderscope_kg.server_engines.CompetitiveIntelligenceEngine"),
+            patch("tenderscope_kg.server_engines.BuyerIntelligenceEngine"),
+            patch("tenderscope_kg.server_engines.OpportunityIntelligenceEngine"),
+            patch("tenderscope_kg.server_engines.ExecutiveDecisionEngine"),
+        ):
             with patch.object(GraphDB, "biz_repo", new_callable=lambda: property(lambda self: MagicMock())):
                 s = KGServer.__new__(KGServer)
                 s.repo_root = Path(".")
@@ -609,45 +633,42 @@ class TestKGServerDispatch:
 
     def test_dispatch_ede_executive_decision(self, server):
         server.ede.executive_decision.return_value = {"company_uid": "CMP-1"}
-        result = server._dispatch("ede_executive_decision",
-                                  {"company_uid": "CMP-1", "opportunity_limit": 5})
+        server._dispatch("ede_executive_decision", {"company_uid": "CMP-1", "opportunity_limit": 5})
         server.ede.executive_decision.assert_called_once_with("CMP-1", opportunity_limit=5)
 
     def test_dispatch_ede_strategic_priorities(self, server):
         server.ede.strategic_priorities.return_value = {"priorities": []}
-        result = server._dispatch("ede_strategic_priorities", {"company_uid": "CMP-1"})
+        server._dispatch("ede_strategic_priorities", {"company_uid": "CMP-1"})
         server.ede.strategic_priorities.assert_called_once_with("CMP-1")
 
     def test_dispatch_ede_risk_register(self, server):
         server.ede.risk_register.return_value = {"risks": []}
-        result = server._dispatch("ede_risk_register", {"company_uid": "CMP-1"})
+        server._dispatch("ede_risk_register", {"company_uid": "CMP-1"})
         server.ede.risk_register.assert_called_once_with("CMP-1")
 
     def test_dispatch_ede_opportunity_pipeline(self, server):
         server.ede.opportunity_pipeline.return_value = {"opportunities": []}
-        result = server._dispatch("ede_opportunity_pipeline",
-                                  {"company_uid": "CMP-1", "limit": 7})
+        server._dispatch("ede_opportunity_pipeline", {"company_uid": "CMP-1", "limit": 7})
         server.ede.opportunity_pipeline.assert_called_once_with("CMP-1", limit=7)
 
     def test_dispatch_oie_executive_summary_not_ede(self, server):
         """oie_executive_summary must route to OIE, not EDE."""
         server.oie.executive_summary.return_value = {"company_uid": "CMP-1"}
-        result = server._dispatch("oie_executive_summary",
-                                  {"company_uid": "CMP-1", "limit": 5})
+        server._dispatch("oie_executive_summary", {"company_uid": "CMP-1", "limit": 5})
         server.oie.executive_summary.assert_called_once_with("CMP-1", limit=5)
         server.ede.executive_decision.assert_not_called()
 
     def test_dispatch_biz_related_companies_not_cie(self, server):
         """biz_related_companies routes to BizQueryEngine, not CIE."""
         server.biz_engine.related_companies.return_value = {"related_companies": []}
-        result = server._dispatch("biz_related_companies", {"uid": "CMP-1", "limit": 20})
+        server._dispatch("biz_related_companies", {"uid": "CMP-1", "limit": 20})
         server.biz_engine.related_companies.assert_called_once_with("CMP-1", limit=20)
         server.cie.company_competitors.assert_not_called()
 
     def test_dispatch_biz_contracts_not_cie(self, server):
         """biz_contracts routes to BizQueryEngine, not CIE."""
         server.biz_engine.contracts.return_value = {"contracts": []}
-        result = server._dispatch("biz_contracts", {"uid": "CMP-1", "limit": 50})
+        server._dispatch("biz_contracts", {"uid": "CMP-1", "limit": 50})
         server.biz_engine.contracts.assert_called_once_with("CMP-1", limit=50)
         server.cie.company_contracts.assert_not_called()
 
@@ -659,6 +680,7 @@ class TestKGServerDispatch:
 # ══════════════════════════════════════════════════════════════════════════════
 # 8. End-to-end: strategic question flows through EDE not raw biz layer
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestStrategicQuestionsUseEDE:
     """

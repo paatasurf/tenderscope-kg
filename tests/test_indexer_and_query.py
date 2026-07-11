@@ -1,5 +1,5 @@
 """Integration tests: index a synthetic repo, run graph queries."""
-import os
+
 import tempfile
 from pathlib import Path
 
@@ -7,7 +7,6 @@ import pytest
 
 from tenderscope_kg.db import GraphDB
 from tenderscope_kg.indexer import Indexer
-from tenderscope_kg.models import EntityKind
 from tenderscope_kg.query_engine import QueryEngine
 
 PYTHON_APP = {
@@ -80,7 +79,7 @@ app.get("/users", get_users)
 app.post("/users", post_user)
 app.get("/health", lambda: {"ok": True})
 ''',
-    "schema.sql": '''\
+    "schema.sql": """\
 CREATE TABLE users (
     id INTEGER PRIMARY KEY,
     email TEXT NOT NULL,
@@ -96,8 +95,8 @@ CREATE TABLE orders (
 
 SELECT * FROM users WHERE id = 1;
 INSERT INTO orders (user_id, total) VALUES (1, 99.99);
-''',
-    ".github/workflows/ci.yml": '''\
+""",
+    ".github/workflows/ci.yml": """\
 name: CI
 on: [push, pull_request]
 jobs:
@@ -113,7 +112,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Lint
         run: ruff check .
-''',
+""",
     ".env.example": "DATABASE_URL=sqlite:///app.db\nSECRET_KEY=changeme\nDEBUG=false\n",
 }
 
@@ -141,8 +140,10 @@ def indexed_engine():
         # Close before tempdir cleanup (Windows file-lock fix)
         db.close()
     finally:
-        import shutil, time
-        time.sleep(0.1)   # let WAL checkpointer flush
+        import shutil
+        import time
+
+        time.sleep(0.1)  # let WAL checkpointer flush
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
@@ -238,7 +239,7 @@ def test_context_pack_with_seed(indexed_engine):
 
 def test_inheritance_chain(indexed_engine):
     engine, _ = indexed_engine
-    result = engine.search("Dog")
+    engine.search("Dog")
     # Dog may or may not be present (only in parser unit test, not in integration fixture)
     # Check chain doesn't crash for User
     result2 = engine.search("User", kinds=["class"])

@@ -32,6 +32,7 @@ BizRepositoryPG accepts either:
 The caller owns the connection lifecycle (open/close).
 setup_schema() must be called explicitly after construction.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,11 +42,11 @@ from datetime import datetime, timezone
 from typing import Callable, Generator, Optional
 
 from ..domain import (
+    UID_PREFIXES,
     BizEntity,
     BizEntityKind,
     BizRelation,
     BizRelationKind,
-    UID_PREFIXES,
     canonicalize,
 )
 from ._base import BizRepository
@@ -127,6 +128,7 @@ CREATE INDEX IF NOT EXISTS idx_pg_biz_hist_uid
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -172,6 +174,7 @@ def _row_to_relation(row: dict) -> BizRelation:
 
 
 # ── Implementation ────────────────────────────────────────────────────────────
+
 
 class BizRepositoryPG(BizRepository):
     """
@@ -222,8 +225,7 @@ class BizRepositoryPG(BizRepository):
             from psycopg2.extras import RealDictCursor
         except ImportError as exc:
             raise ImportError(
-                "psycopg2 is required for BizRepositoryPG. "
-                "Install it with: pip install tenderscope-kg[postgres]"
+                "psycopg2 is required for BizRepositoryPG. Install it with: pip install tenderscope-kg[postgres]"
             ) from exc
         c = conn or self._get_conn()
         return c.cursor(cursor_factory=RealDictCursor)
@@ -330,14 +332,28 @@ class BizRepositoryPG(BizRepository):
                          source, confidence, created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
                     """,
-                    (uid, kind.value, name, canonical,
-                     json.dumps(attrs), source, confidence, now, now),
+                    (
+                        uid,
+                        kind.value,
+                        name,
+                        canonical,
+                        json.dumps(attrs),
+                        source,
+                        confidence,
+                        now,
+                        now,
+                    ),
                 )
                 entity = BizEntity(
-                    uid=uid, kind=kind, name=name,
-                    canonical_name=canonical, attributes=dict(attrs),
-                    source=source, confidence=confidence,
-                    created_at=now, updated_at=now,
+                    uid=uid,
+                    kind=kind,
+                    name=name,
+                    canonical_name=canonical,
+                    attributes=dict(attrs),
+                    source=source,
+                    confidence=confidence,
+                    created_at=now,
+                    updated_at=now,
                 )
             else:
                 ex = dict(existing)
@@ -357,14 +373,26 @@ class BizRepositoryPG(BizRepository):
                         updated_at = %s
                     WHERE kind = %s AND canonical_name = %s
                     """,
-                    (name, json.dumps(merged), new_source, new_confidence,
-                     now, kind.value, canonical),
+                    (
+                        name,
+                        json.dumps(merged),
+                        new_source,
+                        new_confidence,
+                        now,
+                        kind.value,
+                        canonical,
+                    ),
                 )
                 entity = BizEntity(
-                    uid=ex["uid"], kind=kind, name=name,
-                    canonical_name=canonical, attributes=merged,
-                    source=new_source, confidence=new_confidence,
-                    created_at=ex["created_at"], updated_at=now,
+                    uid=ex["uid"],
+                    kind=kind,
+                    name=name,
+                    canonical_name=canonical,
+                    attributes=merged,
+                    source=new_source,
+                    confidence=new_confidence,
+                    created_at=ex["created_at"],
+                    updated_at=now,
                 )
 
             if write_history:
@@ -418,9 +446,18 @@ class BizRepositoryPG(BizRepository):
                                           graph.biz_relations.source),
                     valid_to   = EXCLUDED.valid_to
                 """,
-                (rel_id, source_uid, target_uid, kind.value,
-                 confidence, source, json.dumps(attrs),
-                 valid_from, valid_to, now),
+                (
+                    rel_id,
+                    source_uid,
+                    target_uid,
+                    kind.value,
+                    confidence,
+                    source,
+                    json.dumps(attrs),
+                    valid_from,
+                    valid_to,
+                    now,
+                ),
             )
             cur.execute(
                 "SELECT confidence, source FROM graph.biz_relations WHERE id = %s",
@@ -488,9 +525,7 @@ class BizRepositoryPG(BizRepository):
             row = cur.fetchone()
         return _row_to_entity(dict(row)) if row else None
 
-    def find_by_canonical(
-        self, kind: BizEntityKind, canonical_name: str
-    ) -> Optional[BizEntity]:
+    def find_by_canonical(self, kind: BizEntityKind, canonical_name: str) -> Optional[BizEntity]:
         conn = self._get_conn()
         with self._cursor(conn) as cur:
             cur.execute(
@@ -739,11 +774,13 @@ class BizRepositoryPG(BizRepository):
             snap = r["snapshot"]
             if isinstance(snap, str):
                 snap = json.loads(snap)
-            result.append({
-                "changed_at": r["changed_at"],
-                "changed_by": r["changed_by"],
-                "snapshot": snap,
-            })
+            result.append(
+                {
+                    "changed_at": r["changed_at"],
+                    "changed_by": r["changed_by"],
+                    "snapshot": snap,
+                }
+            )
         return result
 
     # ── Read: stats ───────────────────────────────────────────────────────────
@@ -755,9 +792,7 @@ class BizRepositoryPG(BizRepository):
             entity_count = cur.fetchone()["cnt"]
             cur.execute("SELECT COUNT(*) AS cnt FROM graph.biz_relations")
             relation_count = cur.fetchone()["cnt"]
-            cur.execute(
-                "SELECT kind, COUNT(*) AS cnt FROM graph.biz_entities GROUP BY kind"
-            )
+            cur.execute("SELECT kind, COUNT(*) AS cnt FROM graph.biz_entities GROUP BY kind")
             by_kind = {r["kind"]: r["cnt"] for r in cur.fetchall()}
         return {
             "entities": entity_count,
@@ -779,6 +814,7 @@ class BizRepositoryPG(BizRepository):
 
 if __name__ == "__main__":
     import sys
+
     if len(sys.argv) < 3 or sys.argv[1] != "--migrate":
         print("Usage: python -m tenderscope_kg.repository._postgres --migrate <DSN>")
         sys.exit(1)

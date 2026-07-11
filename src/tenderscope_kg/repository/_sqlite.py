@@ -23,6 +23,7 @@ biz_entity_history — append-only snapshot log
 sequences          — per-kind UID counters
 biz_fts            — FTS5 non-content table; rebuilt explicitly via rebuild_fts()
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -33,11 +34,11 @@ from datetime import datetime, timezone
 from typing import Generator, Iterable, Optional
 
 from ..domain import (
+    UID_PREFIXES,
     BizEntity,
     BizEntityKind,
     BizRelation,
     BizRelationKind,
-    UID_PREFIXES,
     canonicalize,
 )
 from ._base import BizRepository
@@ -111,6 +112,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS biz_fts USING fts5(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -152,6 +154,7 @@ def _row_to_relation(row: sqlite3.Row) -> BizRelation:
 
 
 # ── Implementation ────────────────────────────────────────────────────────────
+
 
 class BizRepositorySQLite(BizRepository):
     """
@@ -200,9 +203,7 @@ class BizRepositorySQLite(BizRepository):
             (prefix,),
         )
         self._commit()
-        val = self._conn.execute(
-            "SELECT next_val FROM sequences WHERE prefix = ?", (prefix,)
-        ).fetchone()[0]
+        val = self._conn.execute("SELECT next_val FROM sequences WHERE prefix = ?", (prefix,)).fetchone()[0]
         return f"{prefix}-{val:08d}"
 
     # ── BizRepository interface ───────────────────────────────────────────────
@@ -257,9 +258,15 @@ class BizRepositorySQLite(BizRepository):
                     source, confidence, created_at, updated_at)
                    VALUES (?,?,?,?,?,?,?,?,?)""",
                 (
-                    entity.uid, entity.kind.value, entity.name,
-                    entity.canonical_name, json.dumps(attrs),
-                    source, confidence, now, now,
+                    entity.uid,
+                    entity.kind.value,
+                    entity.name,
+                    entity.canonical_name,
+                    json.dumps(attrs),
+                    source,
+                    confidence,
+                    now,
+                    now,
                 ),
             )
             self._commit()
@@ -281,8 +288,12 @@ class BizRepositorySQLite(BizRepository):
                    SET name=?, attributes=?, source=?, confidence=?, updated_at=?
                    WHERE uid=?""",
                 (
-                    name, json.dumps(merged),
-                    entity.source, entity.confidence, now, entity.uid,
+                    name,
+                    json.dumps(merged),
+                    entity.source,
+                    entity.confidence,
+                    now,
+                    entity.uid,
                 ),
             )
             self._commit()
@@ -307,9 +318,7 @@ class BizRepositorySQLite(BizRepository):
         now = _now()
         attrs = attributes or {}
 
-        existing = self._conn.execute(
-            "SELECT * FROM biz_relations WHERE id = ?", (rel_id,)
-        ).fetchone()
+        existing = self._conn.execute("SELECT * FROM biz_relations WHERE id = ?", (rel_id,)).fetchone()
         created = existing is None
 
         self._conn.execute(
@@ -322,16 +331,21 @@ class BizRepositorySQLite(BizRepository):
                    source     = COALESCE(excluded.source, source),
                    valid_to   = excluded.valid_to""",
             (
-                rel_id, source_uid, target_uid, kind.value,
-                confidence, source, json.dumps(attrs),
-                valid_from, valid_to, now,
+                rel_id,
+                source_uid,
+                target_uid,
+                kind.value,
+                confidence,
+                source,
+                json.dumps(attrs),
+                valid_from,
+                valid_to,
+                now,
             ),
         )
         self._commit()
 
-        stored = self._conn.execute(
-            "SELECT confidence, source FROM biz_relations WHERE id = ?", (rel_id,)
-        ).fetchone()
+        stored = self._conn.execute("SELECT confidence, source FROM biz_relations WHERE id = ?", (rel_id,)).fetchone()
         stored_confidence = stored[0] if stored else confidence
         stored_source = stored[1] if stored else source
 
@@ -373,9 +387,7 @@ class BizRepositorySQLite(BizRepository):
         return created, updated
 
     def get(self, uid: str) -> Optional[BizEntity]:
-        row = self._conn.execute(
-            "SELECT * FROM biz_entities WHERE uid = ?", (uid,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM biz_entities WHERE uid = ?", (uid,)).fetchone()
         return _row_to_entity(row) if row else None
 
     def find_by_canonical(
@@ -433,14 +445,14 @@ class BizRepositorySQLite(BizRepository):
 
     def search_fts(self, query: str, limit: int = 20) -> list[BizEntity]:
         import re as _re
+
         words = [w for w in _re.split(r"[^\w]+", query.strip()) if w]
         if not words:
             return []
         fts_q = " OR ".join(f'"{w}"*' for w in words)
         try:
             fts_rows = self._conn.execute(
-                "SELECT uid FROM biz_fts WHERE biz_fts MATCH ? "
-                "ORDER BY bm25(biz_fts) LIMIT ?",
+                "SELECT uid FROM biz_fts WHERE biz_fts MATCH ? ORDER BY bm25(biz_fts) LIMIT ?",
                 (fts_q, limit),
             ).fetchall()
         except Exception:
@@ -449,9 +461,7 @@ class BizRepositorySQLite(BizRepository):
         if not uids:
             return []
         placeholders = ",".join("?" * len(uids))
-        rows = self._conn.execute(
-            f"SELECT * FROM biz_entities WHERE uid IN ({placeholders})", uids
-        ).fetchall()
+        rows = self._conn.execute(f"SELECT * FROM biz_entities WHERE uid IN ({placeholders})", uids).fetchall()
         return [_row_to_entity(r) for r in rows]
 
     def get_neighbors(
@@ -536,8 +546,7 @@ class BizRepositorySQLite(BizRepository):
 
     def entity_history(self, uid: str) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT snapshot, changed_by, changed_at FROM biz_entity_history "
-            "WHERE uid = ? ORDER BY id ASC",
+            "SELECT snapshot, changed_by, changed_at FROM biz_entity_history WHERE uid = ? ORDER BY id ASC",
             (uid,),
         ).fetchall()
         return [
@@ -550,21 +559,11 @@ class BizRepositorySQLite(BizRepository):
         ]
 
     def get_stats(self) -> dict:
-        entity_count = self._conn.execute(
-            "SELECT COUNT(*) FROM biz_entities"
-        ).fetchone()[0]
-        relation_count = self._conn.execute(
-            "SELECT COUNT(*) FROM biz_relations"
-        ).fetchone()[0]
-        kind_rows = self._conn.execute(
-            "SELECT kind, COUNT(*) as c FROM biz_entities GROUP BY kind"
-        ).fetchall()
-        history_count = self._conn.execute(
-            "SELECT COUNT(*) FROM biz_entity_history"
-        ).fetchone()[0]
-        seq_rows = self._conn.execute(
-            "SELECT prefix, next_val FROM sequences ORDER BY prefix"
-        ).fetchall()
+        entity_count = self._conn.execute("SELECT COUNT(*) FROM biz_entities").fetchone()[0]
+        relation_count = self._conn.execute("SELECT COUNT(*) FROM biz_relations").fetchone()[0]
+        kind_rows = self._conn.execute("SELECT kind, COUNT(*) as c FROM biz_entities GROUP BY kind").fetchall()
+        history_count = self._conn.execute("SELECT COUNT(*) FROM biz_entity_history").fetchone()[0]
+        seq_rows = self._conn.execute("SELECT prefix, next_val FROM sequences ORDER BY prefix").fetchall()
         return {
             "entities": entity_count,
             "relations": relation_count,
@@ -587,8 +586,7 @@ class BizRepositorySQLite(BizRepository):
     def _append_history(self, entity: BizEntity, changed_by: Optional[str]) -> None:
         snapshot = json.dumps(entity.to_full())
         self._conn.execute(
-            "INSERT INTO biz_entity_history(uid, snapshot, changed_by, changed_at) "
-            "VALUES (?,?,?,?)",
+            "INSERT INTO biz_entity_history(uid, snapshot, changed_by, changed_at) VALUES (?,?,?,?)",
             (entity.uid, snapshot, changed_by, _now()),
         )
         self._commit()

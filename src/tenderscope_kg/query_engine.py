@@ -2,11 +2,10 @@
 Query engine: high-level graph queries that return token-budgeted context packs.
 All public methods return plain dicts ready for JSON serialisation / MCP tools.
 """
+
 from __future__ import annotations
 
-import json
 import re
-from pathlib import Path
 from typing import Any, Optional
 
 from .db import GraphDB, make_entity_id
@@ -14,12 +13,15 @@ from .models import Entity, EntityKind, RelationKind
 
 try:
     import tiktoken
+
     _ENC = tiktoken.get_encoding("cl100k_base")
+
     def _count_tokens(text: str) -> int:
         return len(_ENC.encode(text))
 except Exception:
+
     def _count_tokens(text: str) -> int:
-        return len(text) // 4   # rough fallback
+        return len(text) // 4  # rough fallback
 
 
 _DEFAULT_TOKEN_BUDGET = 4000
@@ -78,19 +80,14 @@ class QueryEngine:
             "entity": _entity_full(e),
             "callers": [_entity_summary(x) for x in callers],
             "callees": [_entity_summary(x) for x in callees],
-            "neighbors": [
-                {"relation": rel.kind.value, "entity": _entity_summary(ent)}
-                for rel, ent in neighbors
-            ],
+            "neighbors": [{"relation": rel.kind.value, "entity": _entity_summary(ent)} for rel, ent in neighbors],
         }
 
     def get_file_outline(self, file_path: str) -> dict:
         """All entities in a file, ordered by line, as a compact outline."""
         # Support partial path matching
         if not file_path.startswith("/"):
-            entities = self.db.find_entities(
-                file_path=f"*{file_path}*", limit=200
-            )
+            entities = self.db.find_entities(file_path=f"*{file_path}*", limit=200)
         else:
             entities = self.db.get_file_entities(file_path)
 
@@ -105,10 +102,12 @@ class QueryEngine:
         outlines = []
         for fp, ents in by_file.items():
             ents.sort(key=lambda x: x.line_start)
-            outlines.append({
-                "file": fp,
-                "entities": [_entity_summary(e) for e in ents],
-            })
+            outlines.append(
+                {
+                    "file": fp,
+                    "entities": [_entity_summary(e) for e in ents],
+                }
+            )
 
         return {"files": outlines, "total": len(entities)}
 
@@ -133,10 +132,12 @@ class QueryEngine:
                     if caller.id not in visited:
                         visited.add(caller.id)
                         next_frontier.append(caller.id)
-                        result["callers"].append({
-                            "depth": d + 1,
-                            "entity": _entity_summary(caller),
-                        })
+                        result["callers"].append(
+                            {
+                                "depth": d + 1,
+                                "entity": _entity_summary(caller),
+                            }
+                        )
             frontier = next_frontier
 
         return result
@@ -162,10 +163,12 @@ class QueryEngine:
                     if callee.id not in visited:
                         visited.add(callee.id)
                         next_frontier.append(callee.id)
-                        result["callees"].append({
-                            "depth": d + 1,
-                            "entity": _entity_summary(callee),
-                        })
+                        result["callees"].append(
+                            {
+                                "depth": d + 1,
+                                "entity": _entity_summary(callee),
+                            }
+                        )
             frontier = next_frontier
 
         return result
@@ -200,8 +203,7 @@ class QueryEngine:
             kinds=[RelationKind.IMPORTS, RelationKind.RE_EXPORTS],
             limit=100,
         )
-        imports = [{"relation": r.kind.value, "target": _entity_summary(e), "line": r.line}
-                   for r, e in neighbors]
+        imports = [{"relation": r.kind.value, "target": _entity_summary(e), "line": r.line} for r, e in neighbors]
         imports.sort(key=lambda x: x.get("line") or 0)
 
         return {
@@ -224,14 +226,14 @@ class QueryEngine:
         tables = self.db.get_sql_tables()
         result = []
         for t in tables:
-            neighbors = self.db.get_neighbors(
-                t.id, direction="out", kinds=[RelationKind.CONTAINS], limit=100
-            )
+            neighbors = self.db.get_neighbors(t.id, direction="out", kinds=[RelationKind.CONTAINS], limit=100)
             cols = [e for _, e in neighbors if e.kind == EntityKind.SQL_COLUMN]
-            result.append({
-                **_entity_full(t),
-                "columns": [_entity_summary(c) for c in cols],
-            })
+            result.append(
+                {
+                    **_entity_full(t),
+                    "columns": [_entity_summary(c) for c in cols],
+                }
+            )
         return {"count": len(tables), "tables": result}
 
     def get_table_usage(self, table_name: str) -> dict:
@@ -239,8 +241,7 @@ class QueryEngine:
         teid = make_entity_id(EntityKind.SQL_TABLE, table_name)
         t = self.db.get_entity(teid)
         if not t:
-            results = self.db.find_entities(name_glob=f"*{table_name}*",
-                                             kind=EntityKind.SQL_TABLE, limit=5)
+            results = self.db.find_entities(name_glob=f"*{table_name}*", kind=EntityKind.SQL_TABLE, limit=5)
             if not results:
                 return {"error": f"Table not found: {table_name}"}
             t = results[0]
@@ -248,12 +249,18 @@ class QueryEngine:
         neighbors = self.db.get_neighbors(
             t.id,
             direction="in",
-            kinds=[RelationKind.USES_TABLE, RelationKind.WRITES_COLUMN,
-                   RelationKind.READS_COLUMN],
+            kinds=[RelationKind.USES_TABLE, RelationKind.WRITES_COLUMN, RelationKind.READS_COLUMN],
             limit=100,
         )
-        usages = [{"relation": r.kind.value, "entity": _entity_summary(e), "file": r.file_path, "line": r.line}
-                  for r, e in neighbors]
+        usages = [
+            {
+                "relation": r.kind.value,
+                "entity": _entity_summary(e),
+                "file": r.file_path,
+                "line": r.line,
+            }
+            for r, e in neighbors
+        ]
         return {"table": _entity_full(t), "usages": usages, "count": len(usages)}
 
     def get_subgraph(self, qualified_name: str, depth: int = 2) -> dict:
@@ -266,10 +273,7 @@ class QueryEngine:
             "center": _entity_summary(e),
             "depth": depth,
             "entities": [_entity_summary(x) for x in entities],
-            "relations": [
-                {"from": r.source_id, "to": r.target_id, "kind": r.kind.value}
-                for r in relations
-            ],
+            "relations": [{"from": r.source_id, "to": r.target_id, "kind": r.kind.value} for r in relations],
         }
 
     def context_pack(
@@ -292,8 +296,7 @@ class QueryEngine:
 
         # Word-by-word FTS fallback when the full phrase hits nothing
         if not candidates:
-            words = [w for w in re.sub(r"[^a-z0-9_]", " ", task_description.lower()).split()
-                     if len(w) > 3]
+            words = [w for w in re.sub(r"[^a-z0-9_]", " ", task_description.lower()).split() if len(w) > 3]
             for word in words:
                 for e in self.db.search_fts(word, limit=10):
                     candidates[e.id] = e
@@ -400,9 +403,7 @@ class QueryEngine:
                 break
             next_f = []
             for eid in frontier:
-                neighbors = self.db.get_neighbors(
-                    eid, direction=direction, kinds=[kind], limit=20
-                )
+                neighbors = self.db.get_neighbors(eid, direction=direction, kinds=[kind], limit=20)
                 for _, ne in neighbors:
                     if ne.id not in visited:
                         visited.add(ne.id)
@@ -413,6 +414,7 @@ class QueryEngine:
 
 
 # ── Formatting helpers ────────────────────────────────────────────────────────
+
 
 def _entity_summary(e: Entity) -> dict:
     d: dict = {

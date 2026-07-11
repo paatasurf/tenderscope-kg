@@ -11,6 +11,7 @@ Column mappings are based on the actual schema observed in the TenderScope
 scraper output.  The importer is intentionally tolerant — missing columns
 are skipped rather than erroring out, so it works across schema versions.
 """
+
 from __future__ import annotations
 
 import csv
@@ -23,47 +24,46 @@ from ..domain.results import ImportResult
 from ..repository._base import BizRepository
 from .base import BaseImporter
 
-
 # ── Column name constants (as seen in bc-tender-scraper output) ───────────────
 
 _TENDER_COLS = {
-    "name":         ["title", "tender_title", "name", "project_name"],
-    "source_url":   ["url", "source_url", "link"],
-    "closing_at":   ["closing_at", "closing_date", "close_date"],
-    "value":        ["value", "estimated_value", "contract_value"],
-    "region":       ["region", "municipality", "location"],
-    "category":     ["category", "sector", "type"],
-    "source":       ["source", "origin", "scraper"],
-    "external_id":  ["external_id", "tender_id", "id"],
+    "name": ["title", "tender_title", "name", "project_name"],
+    "source_url": ["url", "source_url", "link"],
+    "closing_at": ["closing_at", "closing_date", "close_date"],
+    "value": ["value", "estimated_value", "contract_value"],
+    "region": ["region", "municipality", "location"],
+    "category": ["category", "sector", "type"],
+    "source": ["source", "origin", "scraper"],
+    "external_id": ["external_id", "tender_id", "id"],
 }
 
 _COMPANY_COLS = {
-    "name":         ["company_name", "vendor_name", "name", "legal_name", "company"],
-    "address":      ["address", "street_address", "company_address"],
-    "city":         ["city", "municipality"],
-    "province":     ["province", "prov", "state"],
-    "phone":        ["phone", "telephone", "phone_number"],
-    "email":        ["email", "contact_email"],
-    "website":      ["website", "url", "web"],
-    "naics":        ["naics", "naics_code"],
-    "category":     ["category", "sector", "industry"],
+    "name": ["company_name", "vendor_name", "name", "legal_name", "company"],
+    "address": ["address", "street_address", "company_address"],
+    "city": ["city", "municipality"],
+    "province": ["province", "prov", "state"],
+    "phone": ["phone", "telephone", "phone_number"],
+    "email": ["email", "contact_email"],
+    "website": ["website", "url", "web"],
+    "naics": ["naics", "naics_code"],
+    "category": ["category", "sector", "industry"],
 }
 
 _PERMIT_COLS = {
-    "name":         ["permit_number", "application_number", "permit_no"],
-    "address":      ["address", "civic_address", "site_address"],
-    "city":         ["city", "municipality"],
-    "applicant":    ["applicant", "applicant_name", "owner_name"],
-    "value":        ["project_value", "permit_value", "construction_value"],
-    "type":         ["permit_type", "type", "category"],
-    "status":       ["status", "permit_status"],
+    "name": ["permit_number", "application_number", "permit_no"],
+    "address": ["address", "civic_address", "site_address"],
+    "city": ["city", "municipality"],
+    "applicant": ["applicant", "applicant_name", "owner_name"],
+    "value": ["project_value", "permit_value", "construction_value"],
+    "type": ["permit_type", "type", "category"],
+    "status": ["status", "permit_status"],
 }
 
 _AWARD_COLS = {
-    "tender_name":  ["tender_title", "title", "contract_title", "description"],
+    "tender_name": ["tender_title", "title", "contract_title", "description"],
     "company_name": ["vendor_name", "company_name", "awarded_to", "contractor"],
-    "value":        ["contract_value", "award_amount", "value"],
-    "awarded_at":   ["awarded_at", "award_date", "date"],
+    "value": ["contract_value", "award_amount", "value"],
+    "awarded_at": ["awarded_at", "award_date", "date"],
 }
 
 
@@ -155,18 +155,20 @@ class TenderScopeImporter(BaseImporter):
         for i, row in enumerate(rows):
             name = _first_val(row, _TENDER_COLS["name"])
             if not name:
-                result.warnings.append(f"Row {i+2}: no tender name, skipping")
+                result.warnings.append(f"Row {i + 2}: no tender name, skipping")
                 continue
             attrs = {
-                k: v for k, v in {
-                    "source_url":  _first_val(row, _TENDER_COLS["source_url"]),
-                    "closing_at":  _first_val(row, _TENDER_COLS["closing_at"]),
-                    "value":       _first_val(row, _TENDER_COLS["value"]),
-                    "region":      _first_val(row, _TENDER_COLS["region"]),
-                    "category":    _first_val(row, _TENDER_COLS["category"]),
+                k: v
+                for k, v in {
+                    "source_url": _first_val(row, _TENDER_COLS["source_url"]),
+                    "closing_at": _first_val(row, _TENDER_COLS["closing_at"]),
+                    "value": _first_val(row, _TENDER_COLS["value"]),
+                    "region": _first_val(row, _TENDER_COLS["region"]),
+                    "category": _first_val(row, _TENDER_COLS["category"]),
                     "external_id": _first_val(row, _TENDER_COLS["external_id"]),
-                    "source":      _first_val(row, _TENDER_COLS["source"]),
-                }.items() if v
+                    "source": _first_val(row, _TENDER_COLS["source"]),
+                }.items()
+                if v
             }
             try:
                 _, created = self.repo.put_entity(
@@ -180,7 +182,7 @@ class TenderScopeImporter(BaseImporter):
                 else:
                     result.entities_updated += 1
             except Exception as exc:
-                result.errors.append(f"Row {i+2}: {exc}")
+                result.errors.append(f"Row {i + 2}: {exc}")
         return result
 
     # ── Company import ────────────────────────────────────────────────────
@@ -192,21 +194,21 @@ class TenderScopeImporter(BaseImporter):
             if not name:
                 continue
             attrs = {
-                k: v for k, v in {
-                    "address":  _first_val(row, _COMPANY_COLS["address"]),
-                    "city":     _first_val(row, _COMPANY_COLS["city"]),
+                k: v
+                for k, v in {
+                    "address": _first_val(row, _COMPANY_COLS["address"]),
+                    "city": _first_val(row, _COMPANY_COLS["city"]),
                     "province": _first_val(row, _COMPANY_COLS["province"]),
-                    "phone":    _first_val(row, _COMPANY_COLS["phone"]),
-                    "email":    _first_val(row, _COMPANY_COLS["email"]),
-                    "website":  _first_val(row, _COMPANY_COLS["website"]),
-                    "naics":    _first_val(row, _COMPANY_COLS["naics"]),
+                    "phone": _first_val(row, _COMPANY_COLS["phone"]),
+                    "email": _first_val(row, _COMPANY_COLS["email"]),
+                    "website": _first_val(row, _COMPANY_COLS["website"]),
+                    "naics": _first_val(row, _COMPANY_COLS["naics"]),
                     "category": _first_val(row, _COMPANY_COLS["category"]),
-                }.items() if v
+                }.items()
+                if v
             }
             try:
-                existing = self.repo.find_by_canonical(
-                    BizEntityKind.COMPANY, canonicalize(name)
-                )
+                existing = self.repo.find_by_canonical(BizEntityKind.COMPANY, canonicalize(name))
                 entity = self.repo.resolve_company_uid(
                     name,
                     source=self.source_tag,
@@ -252,7 +254,7 @@ class TenderScopeImporter(BaseImporter):
                         result.relations_created += 1
 
             except Exception as exc:
-                result.errors.append(f"Row {i+2}: {exc}")
+                result.errors.append(f"Row {i + 2}: {exc}")
         return result
 
     # ── Permit import ─────────────────────────────────────────────────────
@@ -262,16 +264,18 @@ class TenderScopeImporter(BaseImporter):
         for i, row in enumerate(rows):
             name = _first_val(row, _PERMIT_COLS["name"])
             if not name:
-                result.warnings.append(f"Row {i+2}: no permit number, skipping")
+                result.warnings.append(f"Row {i + 2}: no permit number, skipping")
                 continue
             attrs = {
-                k: v for k, v in {
+                k: v
+                for k, v in {
                     "address": _first_val(row, _PERMIT_COLS["address"]),
-                    "city":    _first_val(row, _PERMIT_COLS["city"]),
-                    "value":   _first_val(row, _PERMIT_COLS["value"]),
-                    "type":    _first_val(row, _PERMIT_COLS["type"]),
-                    "status":  _first_val(row, _PERMIT_COLS["status"]),
-                }.items() if v
+                    "city": _first_val(row, _PERMIT_COLS["city"]),
+                    "value": _first_val(row, _PERMIT_COLS["value"]),
+                    "type": _first_val(row, _PERMIT_COLS["type"]),
+                    "status": _first_val(row, _PERMIT_COLS["status"]),
+                }.items()
+                if v
             }
             try:
                 permit_e, created = self.repo.put_entity(
@@ -303,7 +307,7 @@ class TenderScopeImporter(BaseImporter):
                         result.relations_created += 1
 
             except Exception as exc:
-                result.errors.append(f"Row {i+2}: {exc}")
+                result.errors.append(f"Row {i + 2}: {exc}")
         return result
 
     # ── Contract awards import ────────────────────────────────────────────
@@ -314,13 +318,15 @@ class TenderScopeImporter(BaseImporter):
             tender_name = _first_val(row, _AWARD_COLS["tender_name"])
             company_name = _first_val(row, _AWARD_COLS["company_name"])
             if not tender_name or not company_name:
-                result.warnings.append(f"Row {i+2}: missing tender or company name, skipping")
+                result.warnings.append(f"Row {i + 2}: missing tender or company name, skipping")
                 continue
             attrs = {
-                k: v for k, v in {
-                    "value":      _first_val(row, _AWARD_COLS["value"]),
+                k: v
+                for k, v in {
+                    "value": _first_val(row, _AWARD_COLS["value"]),
                     "awarded_at": _first_val(row, _AWARD_COLS["awarded_at"]),
-                }.items() if v
+                }.items()
+                if v
             }
             try:
                 tender_e, tc = self.repo.put_entity(
@@ -329,9 +335,7 @@ class TenderScopeImporter(BaseImporter):
                     source=self.source_tag,
                 )
                 # resolve_company_uid() — name → canonical UID, alias-aware.
-                _existing_co = self.repo.find_by_canonical(
-                    BizEntityKind.COMPANY, canonicalize(company_name)
-                )
+                _existing_co = self.repo.find_by_canonical(BizEntityKind.COMPANY, canonicalize(company_name))
                 company_e = self.repo.resolve_company_uid(
                     company_name,
                     source=self.source_tag,
@@ -358,5 +362,5 @@ class TenderScopeImporter(BaseImporter):
                 result.relations_created += int(rc1) + int(rc2)
 
             except Exception as exc:
-                result.errors.append(f"Row {i+2}: {exc}")
+                result.errors.append(f"Row {i + 2}: {exc}")
         return result

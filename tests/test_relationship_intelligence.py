@@ -4,6 +4,7 @@ Tests for RelationshipIntelligenceEngine.
 Uses in-memory SQLite graphs built with BizRepository directly.
 No file I/O, no external dependencies.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -11,8 +12,6 @@ import sqlite3
 import pytest
 
 from tenderscope_kg.domain import BizEntityKind, BizRelationKind
-from tenderscope_kg.repository._base import BizRepository
-from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 from tenderscope_kg.relationship_intelligence import (
     RelationshipIntelligenceEngine,
     _confidence_from_strength,
@@ -20,9 +19,11 @@ from tenderscope_kg.relationship_intelligence import (
     _rel_weight,
     _strength_from_evidence,
 )
-
+from tenderscope_kg.repository._base import BizRepository
+from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def repo() -> BizRepositorySQLite:
@@ -39,6 +40,7 @@ def rie(repo: BizRepository) -> RelationshipIntelligenceEngine:
 
 
 # ── Shared graph builder helpers ──────────────────────────────────────────────
+
 
 def make_company(repo: BizRepository, name: str) -> str:
     e, _ = repo.put_entity(BizEntityKind.COMPANY, name)
@@ -70,12 +72,19 @@ def make_province(repo: BizRepository, name: str) -> str:
     return e.uid
 
 
-def link(repo: BizRepository, src: str, kind: BizRelationKind, tgt: str,
-         confidence: float = 1.0, attrs: dict | None = None) -> None:
+def link(
+    repo: BizRepository,
+    src: str,
+    kind: BizRelationKind,
+    tgt: str,
+    confidence: float = 1.0,
+    attrs: dict | None = None,
+) -> None:
     repo.put_relation(src, kind, tgt, confidence=confidence, attributes=attrs or {})
 
 
 # ── Utility / helper unit tests ───────────────────────────────────────────────
+
 
 class TestHelpers:
     def test_rel_weight_known(self):
@@ -131,6 +140,7 @@ class TestHelpers:
 
 # ── explain() ────────────────────────────────────────────────────────────────
 
+
 class TestExplain:
     def test_missing_uid_a(self, rie: RelationshipIntelligenceEngine):
         r = rie.explain("CMP-MISSING", "CMP-OTHER")
@@ -141,9 +151,7 @@ class TestExplain:
         r = rie.explain(a, "CMP-MISSING")
         assert "error" in r
 
-    def test_direct_relation_detected(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_direct_relation_detected(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         link(repo, a, BizRelationKind.WORKS_WITH, b)
@@ -151,9 +159,7 @@ class TestExplain:
         assert r["direct_relations"]
         assert r["direct_relations"][0]["kind"] == "works_with"
 
-    def test_shared_buyer_detected(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_shared_buyer_detected(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         org = make_org(repo, "City Hall")
@@ -167,9 +173,7 @@ class TestExplain:
         assert r["shared_buyers"]
         assert any(sb["uid"] == org for sb in r["shared_buyers"])
 
-    def test_shared_industry(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_shared_industry(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         ind = make_industry(repo, "Construction")
@@ -178,20 +182,16 @@ class TestExplain:
         r = rie.explain(a, b)
         assert any(i["uid"] == ind for i in r["shared_industries"])
 
-    def test_shared_location(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_shared_location(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         city = make_city(repo, "Vancouver")
         link(repo, a, BizRelationKind.IN_CITY, city)
         link(repo, b, BizRelationKind.IN_CITY, city)
         r = rie.explain(a, b)
-        assert any(l["uid"] == city for l in r["shared_locations"])
+        assert any(loc["uid"] == city for loc in r["shared_locations"])
 
-    def test_explanation_text_present(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_explanation_text_present(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         link(repo, a, BizRelationKind.WORKS_WITH, b)
@@ -199,28 +199,21 @@ class TestExplain:
         assert isinstance(r["explanation_text"], str)
         assert len(r["explanation_text"]) > 0
 
-    def test_explanation_no_connection_text(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_explanation_no_connection_text(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Isolated")
         r = rie.explain(a, b)
         assert "No direct or indirect" in r["explanation_text"]
 
-    def test_strength_nonzero_with_evidence(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_strength_nonzero_with_evidence(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
-        link(repo, a, BizRelationKind.AWARDED_TO,
-             make_tender(repo, "T1"))
+        link(repo, a, BizRelationKind.AWARDED_TO, make_tender(repo, "T1"))
         link(repo, a, BizRelationKind.WORKS_WITH, b)
         r = rie.explain(a, b)
         assert r["relationship_strength"] > 0
 
-    def test_evidence_paths_list(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_evidence_paths_list(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         link(repo, a, BizRelationKind.WORKS_WITH, b)
@@ -228,9 +221,7 @@ class TestExplain:
         assert isinstance(r["evidence_paths"], list)
         assert len(r["evidence_paths"]) >= 1
 
-    def test_co_appearances(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_co_appearances(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         t = make_tender(repo, "SharedTender")
@@ -242,33 +233,34 @@ class TestExplain:
 
 # ── relationship_strength() ───────────────────────────────────────────────────
 
+
 class TestRelationshipStrength:
     def test_missing_entity(self, rie: RelationshipIntelligenceEngine):
         r = rie.relationship_strength("CMP-MISSING", "CMP-OTHER")
         assert "error" in r
 
-    def test_zero_strength_no_connection(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_zero_strength_no_connection(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Isolated")
         r = rie.relationship_strength(a, b)
         assert r["relationship_strength"] == 0.0
         assert r["confidence"] == 0.0
 
-    def test_breakdown_keys_present(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_breakdown_keys_present(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         r = rie.relationship_strength(a, b)
-        for key in ("direct_relations", "shared_buyers", "shared_competitors",
-                    "shared_industries", "shared_locations", "co_appearances"):
+        for key in (
+            "direct_relations",
+            "shared_buyers",
+            "shared_competitors",
+            "shared_industries",
+            "shared_locations",
+            "co_appearances",
+        ):
             assert key in r["breakdown"]
 
-    def test_strength_with_direct_link(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_strength_with_direct_link(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         link(repo, a, BizRelationKind.AWARDED_TO, b)
@@ -276,9 +268,7 @@ class TestRelationshipStrength:
         assert r["relationship_strength"] > 0
         assert r["breakdown"]["direct_relations"]["count"] == 1
 
-    def test_strength_increases_with_more_evidence(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_strength_increases_with_more_evidence(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b1 = make_company(repo, "Beta1")
         b2 = make_company(repo, "Beta2")
@@ -293,6 +283,7 @@ class TestRelationshipStrength:
 
 
 # ── shortest_path() ───────────────────────────────────────────────────────────
+
 
 class TestShortestPath:
     def test_same_entity(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
@@ -352,6 +343,7 @@ class TestShortestPath:
 
 # ── infer_relationships() ─────────────────────────────────────────────────────
 
+
 class TestInferRelationships:
     def test_missing_entity(self, rie: RelationshipIntelligenceEngine):
         r = rie.infer_relationships("CMP-MISSING")
@@ -363,9 +355,7 @@ class TestInferRelationships:
         assert r["inferred_count"] == 0
         assert r["shared_buyer_links"] == []
 
-    def test_shared_buyer_link_inferred(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_shared_buyer_link_inferred(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         org = make_org(repo, "Gov Dept")
@@ -378,9 +368,7 @@ class TestInferRelationships:
         r = rie.infer_relationships(a)
         assert any(x["uid"] == b for x in r["shared_buyer_links"])
 
-    def test_subcontractor_hint_inferred(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_subcontractor_hint_inferred(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         sub = make_company(repo, "Subco")
         winner = make_company(repo, "BigCo")
         tender = make_tender(repo, "T-Big")
@@ -389,9 +377,7 @@ class TestInferRelationships:
         r = rie.infer_relationships(sub)
         assert any(x["uid"] == winner for x in r["subcontractor_hints"])
 
-    def test_partnership_hint_requires_min2(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_partnership_hint_requires_min2(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         t1 = make_tender(repo, "T-P1")
@@ -403,9 +389,7 @@ class TestInferRelationships:
         r = rie.infer_relationships(a)
         assert any(x["uid"] == b for x in r["partnership_hints"])
 
-    def test_partnership_hint_single_event_excluded(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_partnership_hint_single_event_excluded(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha2")
         b = make_company(repo, "Beta2")
         t1 = make_tender(repo, "T-Single")
@@ -414,9 +398,7 @@ class TestInferRelationships:
         r = rie.infer_relationships(a)
         assert not any(x["uid"] == b for x in r["partnership_hints"])
 
-    def test_industry_cluster_peer(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_industry_cluster_peer(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         ind = make_industry(repo, "Roofing")
@@ -425,9 +407,7 @@ class TestInferRelationships:
         r = rie.infer_relationships(a)
         assert any(x["uid"] == b for x in r["industry_cluster_peers"])
 
-    def test_geographic_cluster_peer(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_geographic_cluster_peer(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         city = make_city(repo, "Kelowna")
@@ -436,9 +416,7 @@ class TestInferRelationships:
         r = rie.infer_relationships(a)
         assert any(x["uid"] == b for x in r["geographic_cluster_peers"])
 
-    def test_all_inferences_have_strength(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_all_inferences_have_strength(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         ind = make_industry(repo, "Plumbing")
@@ -450,9 +428,7 @@ class TestInferRelationships:
             assert "confidence" in peer
             assert "evidence_path" in peer
 
-    def test_limit_respected(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_limit_respected(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         ind = make_industry(repo, "Big Industry")
         link(repo, a, BizRelationKind.IN_INDUSTRY, ind)
@@ -465,18 +441,15 @@ class TestInferRelationships:
 
 # ── shared_buyers() ───────────────────────────────────────────────────────────
 
+
 class TestSharedBuyers:
-    def test_no_shared_buyers(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_no_shared_buyers(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         r = rie.shared_buyers(a, b)
         assert r["shared_buyer_count"] == 0
 
-    def test_shared_buyer_found(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_shared_buyer_found(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         org = make_org(repo, "Ministry")
@@ -490,9 +463,7 @@ class TestSharedBuyers:
         assert r["shared_buyer_count"] == 1
         assert r["shared_buyers"][0]["uid"] == org
 
-    def test_evidence_path_present(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_evidence_path_present(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         org = make_org(repo, "City")
@@ -508,18 +479,15 @@ class TestSharedBuyers:
 
 # ── shared_competitors() ─────────────────────────────────────────────────────
 
+
 class TestSharedCompetitors:
-    def test_no_shared_competitors(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_no_shared_competitors(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         r = rie.shared_competitors(a, b)
         assert r["shared_competitor_count"] == 0
 
-    def test_shared_competitor_found(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_shared_competitor_found(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         rival = make_company(repo, "Rival")
@@ -535,6 +503,7 @@ class TestSharedCompetitors:
 
 # ── subcontractor_chains() ────────────────────────────────────────────────────
 
+
 class TestSubcontractorChains:
     def test_missing_entity(self, rie: RelationshipIntelligenceEngine):
         r = rie.subcontractor_chains("CMP-MISSING")
@@ -545,9 +514,7 @@ class TestSubcontractorChains:
         r = rie.subcontractor_chains(a)
         assert r["chain_count"] == 0
 
-    def test_chain_detected_via_works_with(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_chain_detected_via_works_with(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Prime")
         b = make_company(repo, "Sub1")
         c = make_company(repo, "Sub2")
@@ -558,9 +525,7 @@ class TestSubcontractorChains:
         assert b in uids_in_chains or c in uids_in_chains
         assert r["chain_count"] > 0
 
-    def test_chain_has_evidence_path(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_chain_has_evidence_path(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Prime2")
         b = make_company(repo, "Sub2")
         c = make_company(repo, "Sub3")
@@ -573,14 +538,13 @@ class TestSubcontractorChains:
 
 # ── recurring_partnerships() ──────────────────────────────────────────────────
 
+
 class TestRecurringPartnerships:
     def test_missing_entity(self, rie: RelationshipIntelligenceEngine):
         r = rie.recurring_partnerships("CMP-MISSING")
         assert "error" in r
 
-    def test_no_partnerships_single_event(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_no_partnerships_single_event(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         t = make_tender(repo, "T-Rec1")
@@ -589,9 +553,7 @@ class TestRecurringPartnerships:
         r = rie.recurring_partnerships(a, min_count=2)
         assert r["partnership_count"] == 0
 
-    def test_partnership_detected_multi_event(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_partnership_detected_multi_event(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         for i in range(3):
@@ -601,9 +563,7 @@ class TestRecurringPartnerships:
         r = rie.recurring_partnerships(a, min_count=2)
         assert any(p["uid"] == b for p in r["partnerships"])
 
-    def test_partnership_strength_and_confidence(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_partnership_strength_and_confidence(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         for i in range(3):
@@ -617,9 +577,7 @@ class TestRecurringPartnerships:
             assert "confidence" in p
             assert "evidence_path" in p
 
-    def test_min_count_respected(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_min_count_respected(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         for i in range(2):
@@ -634,6 +592,7 @@ class TestRecurringPartnerships:
 
 # ── industry_clusters() ───────────────────────────────────────────────────────
 
+
 class TestIndustryClusters:
     def test_missing_industry(self, rie: RelationshipIntelligenceEngine):
         r = rie.industry_clusters("IND-MISSING")
@@ -644,9 +603,7 @@ class TestIndustryClusters:
         r = rie.industry_clusters(ind)
         assert r["company_count"] == 0
 
-    def test_cluster_members(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_cluster_members(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         ind = make_industry(repo, "Electrical")
         co1 = make_company(repo, "ElecCo1")
         co2 = make_company(repo, "ElecCo2")
@@ -657,9 +614,7 @@ class TestIndustryClusters:
         assert co1 in uids
         assert co2 in uids
 
-    def test_tender_count_present(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_tender_count_present(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         ind = make_industry(repo, "Plumbing2")
         co = make_company(repo, "PlumbCo")
         t = make_tender(repo, "T-Plumb")
@@ -668,9 +623,7 @@ class TestIndustryClusters:
         r = rie.industry_clusters(ind)
         assert r["companies"][0]["tender_count"] == 1
 
-    def test_ranked_by_tender_count(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_ranked_by_tender_count(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         ind = make_industry(repo, "Roofing2")
         co_big = make_company(repo, "BigRoofer")
         co_small = make_company(repo, "SmallRoofer")
@@ -682,9 +635,7 @@ class TestIndustryClusters:
         r = rie.industry_clusters(ind)
         assert r["companies"][0]["uid"] == co_big
 
-    def test_evidence_path_present(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_evidence_path_present(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         ind = make_industry(repo, "HVAC")
         co = make_company(repo, "HVACCo")
         link(repo, co, BizRelationKind.IN_INDUSTRY, ind)
@@ -694,14 +645,13 @@ class TestIndustryClusters:
 
 # ── geographic_clusters() ────────────────────────────────────────────────────
 
+
 class TestGeographicClusters:
     def test_missing_location(self, rie: RelationshipIntelligenceEngine):
         r = rie.geographic_clusters("CTY-MISSING")
         assert "error" in r
 
-    def test_city_cluster(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_city_cluster(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         city = make_city(repo, "Victoria")
         co1 = make_company(repo, "VicCo1")
         co2 = make_company(repo, "VicCo2")
@@ -712,9 +662,7 @@ class TestGeographicClusters:
         assert co1 in uids
         assert co2 in uids
 
-    def test_province_cluster(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_province_cluster(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         prov = make_province(repo, "British Columbia")
         co = make_company(repo, "BCCo")
         link(repo, co, BizRelationKind.IN_PROVINCE, prov)
@@ -722,18 +670,14 @@ class TestGeographicClusters:
         assert r["location_kind"] == "province"
         assert any(c["uid"] == co for c in r["companies"])
 
-    def test_evidence_path_present(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_evidence_path_present(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         city = make_city(repo, "Burnaby")
         co = make_company(repo, "BurnCo")
         link(repo, co, BizRelationKind.IN_CITY, city)
         r = rie.geographic_clusters(city)
         assert "evidence_path" in r["companies"][0]
 
-    def test_sorted_alphabetically(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_sorted_alphabetically(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         city = make_city(repo, "Nanaimo")
         link(repo, make_company(repo, "Zebra Corp"), BizRelationKind.IN_CITY, city)
         link(repo, make_company(repo, "Alpha Corp"), BizRelationKind.IN_CITY, city)
@@ -741,9 +685,7 @@ class TestGeographicClusters:
         names = [c["name"] for c in r["companies"]]
         assert names == sorted(names)
 
-    def test_name_lookup(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_name_lookup(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         city = make_city(repo, "Penticton")
         co = make_company(repo, "PenCo")
         link(repo, co, BizRelationKind.IN_CITY, city)
@@ -753,23 +695,20 @@ class TestGeographicClusters:
 
 # ── organization_influence() ─────────────────────────────────────────────────
 
+
 class TestOrganizationInfluence:
     def test_missing_org(self, rie: RelationshipIntelligenceEngine):
         r = rie.organization_influence("ORG-MISSING")
         assert "error" in r
 
-    def test_org_no_tenders(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_org_no_tenders(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "EmptyOrg")
         r = rie.organization_influence(org)
         assert r["tender_count"] == 0
         assert r["company_count"] == 0
         assert r["influence_score"] == 0.0
 
-    def test_org_with_tenders_and_companies(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_org_with_tenders_and_companies(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "City Of Vancouver")
         t1 = make_tender(repo, "T-Inf1")
         t2 = make_tender(repo, "T-Inf2")
@@ -784,9 +723,7 @@ class TestOrganizationInfluence:
         assert r["company_count"] == 2
         assert r["influence_score"] > 0.0
 
-    def test_influence_score_proportional(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_influence_score_proportional(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "Big Ministry")
         for i in range(10):
             t = make_tender(repo, f"T-Inf-Big-{i}")
@@ -796,9 +733,7 @@ class TestOrganizationInfluence:
         r = rie.organization_influence(org)
         assert r["influence_score"] == 1.0
 
-    def test_companies_list(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_companies_list(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         org = make_org(repo, "Province")
         t = make_tender(repo, "T-Prov")
         co = make_company(repo, "ProvCo")
@@ -811,10 +746,9 @@ class TestOrganizationInfluence:
 
 # ── Integration: full explain → strength consistency ─────────────────────────
 
+
 class TestIntegration:
-    def test_explain_strength_consistent(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_explain_strength_consistent(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         org = make_org(repo, "RegionalGov")
@@ -834,24 +768,29 @@ class TestIntegration:
         strength = rie.relationship_strength(a, b)
         assert abs(explain["relationship_strength"] - strength["relationship_strength"]) < 0.001
 
-    def test_full_explain_keys(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_full_explain_keys(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         r = rie.explain(a, b)
         for key in (
-            "uid_a", "uid_b", "direct_relations", "shortest_path",
-            "shared_buyers", "shared_competitors", "shared_industries",
-            "shared_locations", "recurring_co_appearances",
-            "relationship_strength", "confidence", "evidence_count",
-            "explanation_text", "evidence_paths",
+            "uid_a",
+            "uid_b",
+            "direct_relations",
+            "shortest_path",
+            "shared_buyers",
+            "shared_competitors",
+            "shared_industries",
+            "shared_locations",
+            "recurring_co_appearances",
+            "relationship_strength",
+            "confidence",
+            "evidence_count",
+            "explanation_text",
+            "evidence_paths",
         ):
             assert key in r, f"Missing key: {key}"
 
-    def test_path_through_tender(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_path_through_tender(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         t = make_tender(repo, "T-Bridge")
@@ -861,9 +800,7 @@ class TestIntegration:
         assert r["found"]
         assert r["hop_count"] == 2
 
-    def test_infer_then_explain_coherent(
-        self, rie: RelationshipIntelligenceEngine, repo: BizRepository
-    ):
+    def test_infer_then_explain_coherent(self, rie: RelationshipIntelligenceEngine, repo: BizRepository):
         a = make_company(repo, "Alpha")
         b = make_company(repo, "Beta")
         ind = make_industry(repo, "Landscaping")

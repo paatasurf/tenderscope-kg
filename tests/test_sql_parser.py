@@ -1,7 +1,9 @@
 """Tests for the SQL parser."""
+
 import pytest
-from tenderscope_kg.parsers.sql_parser import SQLParser
+
 from tenderscope_kg.models import EntityKind, RelationKind
+from tenderscope_kg.parsers.sql_parser import SQLParser
 
 SQL_SOURCE = """\
 CREATE TABLE users (
