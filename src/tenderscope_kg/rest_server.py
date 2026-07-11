@@ -37,14 +37,40 @@ so this file contains no lookup branching itself.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 if TYPE_CHECKING:
     from .server_engines import EngineSet
+
+
+class CompanyIdentityResponse(BaseModel):
+    """
+    Standardized company identity contract.
+
+    This response shape is the public contract for ``/companies/{uid}/identity``
+    on both the stable ``/api/v1/graph`` and legacy ``/api/graph`` prefixes.
+    Fields are additive: new optional fields may appear, but no existing field
+    will be removed or change its type in a backward-incompatible way.
+    """
+
+    company_uid: str = Field(description="Immutable permanent identifier (e.g. CMP-00000001).")
+    display_name: str = Field(description="Current display name; mutable metadata.")
+    canonical_name: str = Field(description="Write-once deduplication key.")
+    aliases: list[dict[str, Any]] = Field(default_factory=list, description="Known aliases with evidence.")
+    external_ids: dict[str, str] = Field(
+        default_factory=dict, description="External identifiers keyed by EXTERNAL_ID_KEYS."
+    )
+    attributes: dict[str, Any] = Field(default_factory=dict, description="Additional mutable metadata.")
+    merge_candidates: list[dict[str, Any]] = Field(
+        default_factory=list, description="Confidence-scored SAME_AS candidates."
+    )
+    source: str | None = Field(default=None, description="Importer that created the canonical record.")
+    confidence: float = Field(default=1.0, description="Data quality confidence of the canonical record.")
 
 
 class LegacyDeprecationMiddleware(BaseHTTPMiddleware):
@@ -121,7 +147,11 @@ def create_rest_app(engines: "EngineSet") -> FastAPI:
 
     # ── Company identity (aliases + external IDs) ─────────────────────────────
 
-    @app.get("/companies/{uid}/identity", tags=["companies"])
+    @app.get(
+        "/companies/{uid}/identity",
+        response_model=CompanyIdentityResponse,
+        tags=["companies"],
+    )
     def get_company_identity(uid: str) -> dict:
         result = engines.biz.company_identity(uid)
         if "error" in result:
