@@ -10,6 +10,16 @@ No business logic lives here.  All query, scoring, and graph-traversal
 logic lives in the engine layer (BizQueryEngine, CompanyIntelligenceEngine,
 etc.) accessed through EngineSet.
 
+Versioning
+----------
+The app is mounted at two prefixes by the MCP/SSE server:
+
+  - ``/api/graph``    legacy prefix (deprecated, kept for backward compatibility)
+  - ``/api/v1/graph`` current stable prefix
+
+Both mounts serve identical endpoints.  Requests through the legacy prefix
+receive ``Deprecation`` and ``Sunset`` headers to alert callers to migrate.
+
 Mounted at /api/graph/ to avoid namespace collision with bc-tender-scraper's
 own /api/ routes when that service proxies through.
 
@@ -29,25 +39,51 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Query
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 if TYPE_CHECKING:
     from .server_engines import EngineSet
 
 
+class LegacyDeprecationMiddleware(BaseHTTPMiddleware):
+    """
+    Mark requests routed through the legacy ``/api/graph`` mount as deprecated.
+
+    The current stable mount is ``/api/v1/graph``.  Both mounts serve the same
+    endpoints, so this middleware only adds headers and does not alter
+    response bodies or status codes.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # root_path is set by Starlette's Mount() to the mount prefix.
+        root_path = request.scope.get("root_path", "")
+        if root_path == "/api/graph":
+            response.headers["Deprecation"] = "true"
+            # Tentative sunset date; update when the legacy prefix is removed.
+            response.headers["Sunset"] = "Sun, 31 Dec 2026 23:59:59 GMT"
+        return response
+
+
 def create_rest_app(engines: "EngineSet") -> FastAPI:
     """
-    Build and return the FastAPI application.
+    Build and return the versioned FastAPI application.
 
     Accepts the shared EngineSet constructed at process startup.
     Must not call build_engines() itself.
     """
     app = FastAPI(
         title="TenderScope Graph API",
-        description="REST transport over the TenderScope business knowledge graph.",
+        description=(
+            "REST transport over the TenderScope business knowledge graph. "
+            "Stable prefix: /api/v1/graph. Legacy prefix: /api/graph (deprecated)."
+        ),
         version="1.0.0",
         docs_url="/docs",
         redoc_url=None,
     )
+    app.add_middleware(LegacyDeprecationMiddleware)
 
     # ── Health ────────────────────────────────────────────────────────────────
 

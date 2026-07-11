@@ -1842,6 +1842,8 @@ class KGServer:
                 Route("/api/verify", endpoint=handle_verify),
                 Route("/api/import", endpoint=handle_import, methods=["POST"]),
                 Mount("/messages/", app=sse.handle_post_message),
+                # Stable v1 prefix and legacy prefix serve the same REST app.
+                Mount("/api/v1/graph", app=rest_app),
                 Mount("/api/graph", app=rest_app),
             ]
         )
