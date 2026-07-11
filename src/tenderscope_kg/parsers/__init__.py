@@ -1,9 +1,10 @@
 """Language parser registry."""
+
 from .base import BaseParser
-from .python_parser import PythonParser
-from .js_parser import JavaScriptParser
-from .sql_parser import SQLParser
 from .config_parser import ConfigParser
+from .js_parser import JavaScriptParser
+from .python_parser import PythonParser
+from .sql_parser import SQLParser
 
 PARSERS: list[type[BaseParser]] = [
     PythonParser,

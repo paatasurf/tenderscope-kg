@@ -2,6 +2,7 @@
 Core data models for the Knowledge Graph.
 All entities and relationships are strongly-typed dataclasses.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -53,11 +54,11 @@ class RelationKind(str, Enum):
 
 @dataclass
 class Entity:
-    id: str                          # sha256[:16] of (kind + qualified_name)
+    id: str  # sha256[:16] of (kind + qualified_name)
     kind: EntityKind
     name: str
-    qualified_name: str              # dotted path: module.Class.method
-    file_path: str                   # repo-relative path
+    qualified_name: str  # dotted path: module.Class.method
+    file_path: str  # repo-relative path
     line_start: int
     line_end: int
     signature: Optional[str] = None  # function/class signature
@@ -74,13 +75,13 @@ class Entity:
 
 @dataclass
 class Relation:
-    id: str                          # sha256[:16] of (src_id + kind + tgt_id)
+    id: str  # sha256[:16] of (src_id + kind + tgt_id)
     source_id: str
     target_id: str
     kind: RelationKind
     file_path: Optional[str] = None  # file where the relation was found
     line: Optional[int] = None
-    weight: float = 1.0              # call frequency, import depth, etc.
+    weight: float = 1.0  # call frequency, import depth, etc.
     extra: dict = field(default_factory=dict)
 
 
@@ -90,7 +91,7 @@ class IndexStats:
     files_indexed: int
     entities_total: int
     relations_total: int
-    languages: dict[str, int]        # language -> file count
+    languages: dict[str, int]  # language -> file count
     index_time_s: float
-    last_updated: str                # ISO 8601
+    last_updated: str  # ISO 8601
     schema_version: str = "1"

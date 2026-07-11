@@ -2,6 +2,7 @@
 CLI entry point: tkg
 Commands: index, search, outline, callers, callees, routes, tables, context, stats
 """
+
 from __future__ import annotations
 
 import json
@@ -13,18 +14,18 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 
-from .db import GraphDB
-from .indexer import Indexer
-from .query_engine import QueryEngine
 from .biz_query_engine import BizQueryEngine
-from .repository import open_repository
-from .company_intelligence import CompanyIntelligenceEngine
-from .relationship_intelligence import RelationshipIntelligenceEngine
-from .competitive_intelligence import CompetitiveIntelligenceEngine
 from .buyer_intelligence import BuyerIntelligenceEngine
-from .opportunity_intelligence import OpportunityIntelligenceEngine
+from .company_intelligence import CompanyIntelligenceEngine
+from .competitive_intelligence import CompetitiveIntelligenceEngine
+from .db import GraphDB
 from .executive_decision import ExecutiveDecisionEngine
 from .importers import CSVImporter, JSONImporter, TenderScopeImporter
+from .indexer import Indexer
+from .opportunity_intelligence import OpportunityIntelligenceEngine
+from .query_engine import QueryEngine
+from .relationship_intelligence import RelationshipIntelligenceEngine
+from .repository import open_repository
 
 console = Console()
 
@@ -43,6 +44,7 @@ def main() -> None:
 
 
 # ── tkg index ─────────────────────────────────────────────────────────────────
+
 
 @main.command()
 @click.argument("repo", default=".", type=click.Path(exists=True))
@@ -82,6 +84,7 @@ def index(repo: str, full: bool) -> None:
 
 # ── tkg search ────────────────────────────────────────────────────────────────
 
+
 @main.command()
 @click.argument("query")
 @click.option("--repo", default=".", type=click.Path(exists=True))
@@ -112,6 +115,7 @@ def search(query: str, repo: str, kind: tuple, limit: int, as_json: bool) -> Non
 
 
 # ── tkg outline ───────────────────────────────────────────────────────────────
+
 
 @main.command()
 @click.argument("file_path")
@@ -147,6 +151,7 @@ def outline(file_path: str, repo: str, as_json: bool) -> None:
 
 # ── tkg callers ───────────────────────────────────────────────────────────────
 
+
 @main.command()
 @click.argument("qualified_name")
 @click.option("--repo", default=".", type=click.Path(exists=True))
@@ -165,11 +170,14 @@ def callers(qualified_name: str, repo: str, depth: int, as_json: bool) -> None:
             console.print(f"[bold]Callers of:[/bold] {result['target']['qualified_name']}")
             for c in result["callers"]:
                 e = c["entity"]
-                console.print(f"  depth={c['depth']} [cyan]{e['kind']}[/cyan] {e['qualified_name']} [{e['file']}:{e['line']}]")
+                console.print(
+                    f"  depth={c['depth']} [cyan]{e['kind']}[/cyan] {e['qualified_name']} [{e['file']}:{e['line']}]"
+                )
     db.close()
 
 
 # ── tkg callees ───────────────────────────────────────────────────────────────
+
 
 @main.command()
 @click.argument("qualified_name")
@@ -189,11 +197,14 @@ def callees(qualified_name: str, repo: str, depth: int, as_json: bool) -> None:
             console.print(f"[bold]Callees of:[/bold] {result['source']['qualified_name']}")
             for c in result["callees"]:
                 e = c["entity"]
-                console.print(f"  depth={c['depth']} [cyan]{e['kind']}[/cyan] {e['qualified_name']} [{e['file']}:{e['line']}]")
+                console.print(
+                    f"  depth={c['depth']} [cyan]{e['kind']}[/cyan] {e['qualified_name']} [{e['file']}:{e['line']}]"
+                )
     db.close()
 
 
 # ── tkg routes ────────────────────────────────────────────────────────────────
+
 
 @main.command()
 @click.option("--repo", default=".", type=click.Path(exists=True))
@@ -211,13 +222,17 @@ def routes(repo: str, as_json: bool) -> None:
         t.add_column("File:Line", style="dim")
         for r in result["routes"]:
             extra = r.get("extra", {})
-            t.add_row(extra.get("method", "?"), extra.get("path", r["name"]),
-                      f"{r['file']}:{r['line_start']}")
+            t.add_row(
+                extra.get("method", "?"),
+                extra.get("path", r["name"]),
+                f"{r['file']}:{r['line_start']}",
+            )
         console.print(t)
     db.close()
 
 
 # ── tkg tables ────────────────────────────────────────────────────────────────
+
 
 @main.command()
 @click.option("--repo", default=".", type=click.Path(exists=True))
@@ -244,6 +259,7 @@ def tables(repo: str, as_json: bool) -> None:
 
 # ── tkg context ───────────────────────────────────────────────────────────────
 
+
 @main.command()
 @click.argument("task")
 @click.option("--repo", default=".", type=click.Path(exists=True))
@@ -258,13 +274,16 @@ def context(task: str, repo: str, budget: int, seed: tuple, as_json: bool) -> No
         click.echo(json.dumps(result, indent=2))
     else:
         console.print(f"[bold]Task:[/bold] {result['task']}")
-        console.print(f"[dim]Tokens used: {result['tokens_used']}/{result['token_budget']} | "
-                      f"Entities: {result['entity_count']}[/dim]\n")
+        console.print(
+            f"[dim]Tokens used: {result['tokens_used']}/{result['token_budget']} | "
+            f"Entities: {result['entity_count']}[/dim]\n"
+        )
         console.print(Syntax(result["context"], "python", theme="monokai", line_numbers=False))
     db.close()
 
 
 # ── tkg stats ─────────────────────────────────────────────────────────────────
+
 
 @main.command()
 @click.option("--repo", default=".", type=click.Path(exists=True))
@@ -295,6 +314,7 @@ def stats(repo: str, as_json: bool) -> None:
 # Business Intelligence Engine CLI
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _get_biz_engine(repo: str) -> tuple[GraphDB, BizQueryEngine]:
     repo_path = Path(repo).resolve()
     db_path = repo_path / ".tkg" / "graph.db"
@@ -317,26 +337,33 @@ def _get_ede(repo: str) -> tuple[GraphDB, ExecutiveDecisionEngine]:
 
 # ── tkg biz-import ────────────────────────────────────────────────────────────
 
+
 @main.command("biz-import")
 @click.argument("file", type=click.Path(exists=True))
 @click.option("--repo", default=".", show_default=True, help="Repository root")
 @click.option(
-    "--format", "fmt",
+    "--format",
+    "fmt",
     type=click.Choice(["auto", "csv", "json", "tenderscope"]),
-    default="auto", show_default=True,
+    default="auto",
+    show_default=True,
 )
 @click.option("--entity-kind", default=None, help="Entity kind override for CSV (e.g. company)")
 @click.option("--name-column", default=None, help="Name column for CSV imports")
-@click.option(
-    "--attr-columns", default="", help="Comma-separated attribute column names for CSV"
-)
+@click.option("--attr-columns", default="", help="Comma-separated attribute column names for CSV")
 @click.option("--source-tag", default="cli", show_default=True)
 @click.option("--limit", default=None, type=int, help="Max rows to import (for testing)")
 @click.option("--json", "as_json", is_flag=True)
 def biz_import(
-    file: str, repo: str, fmt: str, entity_kind: str | None,
-    name_column: str | None, attr_columns: str,
-    source_tag: str, limit: int | None, as_json: bool,
+    file: str,
+    repo: str,
+    fmt: str,
+    entity_kind: str | None,
+    name_column: str | None,
+    attr_columns: str,
+    source_tag: str,
+    limit: int | None,
+    as_json: bool,
 ) -> None:
     """Import business entities from a CSV, JSON, or TenderScope file."""
     db, _ = _get_biz_engine(repo)
@@ -349,9 +376,7 @@ def biz_import(
 
     if fmt == "csv":
         if not entity_kind or not name_column:
-            click.echo(
-                "Error: --entity-kind and --name-column are required for CSV format", err=True
-            )
+            click.echo("Error: --entity-kind and --name-column are required for CSV format", err=True)
             sys.exit(1)
         schema = {
             "entity_kind": entity_kind,
@@ -383,6 +408,7 @@ def biz_import(
 
 # ── tkg biz-search ────────────────────────────────────────────────────────────
 
+
 @main.command("biz-search")
 @click.argument("query")
 @click.option("--repo", default=".", show_default=True)
@@ -410,6 +436,7 @@ def biz_search(query: str, repo: str, kind: str | None, limit: int, as_json: boo
 
 
 # ── tkg biz-entity ────────────────────────────────────────────────────────────
+
 
 @main.command("biz-entity")
 @click.argument("uid")
@@ -444,6 +471,7 @@ def biz_entity(uid: str, repo: str, as_json: bool) -> None:
 
 # ── tkg biz-neighbors ─────────────────────────────────────────────────────────
 
+
 @main.command("biz-neighbors")
 @click.argument("uid")
 @click.option("--repo", default=".", show_default=True)
@@ -451,9 +479,7 @@ def biz_entity(uid: str, repo: str, as_json: bool) -> None:
 @click.option("--kind", "kinds", multiple=True, help="Relation kind filter (repeatable)")
 @click.option("--limit", default=50, show_default=True)
 @click.option("--json", "as_json", is_flag=True)
-def biz_neighbors(
-    uid: str, repo: str, direction: str, kinds: tuple, limit: int, as_json: bool
-) -> None:
+def biz_neighbors(uid: str, repo: str, direction: str, kinds: tuple, limit: int, as_json: bool) -> None:
     """Show all neighbors of a business entity."""
     db, engine = _get_biz_engine(repo)
     result = engine.neighbors(uid, direction=direction, kinds=list(kinds) or None, limit=limit)
@@ -463,10 +489,7 @@ def biz_neighbors(
         if "error" in result:
             console.print(f"[red]{result['error']}[/red]")
         else:
-            console.print(
-                f"\nNeighbors of [cyan]{uid}[/cyan] "
-                f"({direction}) — {result['count']} found"
-            )
+            console.print(f"\nNeighbors of [cyan]{uid}[/cyan] ({direction}) — {result['count']} found")
             t = Table()
             t.add_column("Relation", style="yellow")
             t.add_column("UID", style="cyan")
@@ -481,6 +504,7 @@ def biz_neighbors(
 
 
 # ── tkg biz-path ──────────────────────────────────────────────────────────────
+
 
 @main.command("biz-path")
 @click.argument("uid1")
@@ -498,9 +522,7 @@ def biz_path(uid1: str, uid2: str, repo: str, max_depth: int, as_json: bool) -> 
         if not result.get("found"):
             console.print(f"[yellow]{result.get('message', 'No path found')}[/yellow]")
         else:
-            console.print(
-                f"\nPath found in [bold]{result['hops']}[/bold] hop(s):"
-            )
+            console.print(f"\nPath found in [bold]{result['hops']}[/bold] hop(s):")
             for i, node in enumerate(result["path"]):
                 via = node.get("via")
                 uid = node.get("uid", "?")
@@ -513,6 +535,7 @@ def biz_path(uid1: str, uid2: str, repo: str, max_depth: int, as_json: bool) -> 
 
 
 # ── tkg biz-stats ─────────────────────────────────────────────────────────────
+
 
 @main.command("biz-stats")
 @click.option("--repo", default=".", show_default=True)
@@ -546,6 +569,7 @@ def biz_stats(repo: str, as_json: bool) -> None:
 # Company Intelligence Engine commands
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def _get_cie(repo: str) -> tuple[object, CompanyIntelligenceEngine]:
     db, _ = _get_biz_engine(repo)
     return db, CompanyIntelligenceEngine(db.biz_repo)
@@ -557,6 +581,7 @@ def _get_rie(repo: str) -> tuple[object, RelationshipIntelligenceEngine]:
 
 
 # ── tkg cie-profile ───────────────────────────────────────────────────────────
+
 
 @main.command("cie-profile")
 @click.argument("uid")
@@ -587,6 +612,7 @@ def cie_profile(uid: str, repo: str, as_json: bool) -> None:
 
 # ── tkg cie-summary ───────────────────────────────────────────────────────────
 
+
 @main.command("cie-summary")
 @click.argument("uid")
 @click.option("--repo", default=".", show_default=True)
@@ -600,6 +626,7 @@ def cie_summary(uid: str, repo: str, as_json: bool) -> None:
 
 
 # ── tkg cie-tenders ───────────────────────────────────────────────────────────
+
 
 @main.command("cie-tenders")
 @click.argument("uid")
@@ -634,6 +661,7 @@ def cie_tenders(uid: str, repo: str, as_json: bool, limit: int) -> None:
 
 # ── tkg cie-contracts ─────────────────────────────────────────────────────────
 
+
 @main.command("cie-contracts")
 @click.argument("uid")
 @click.option("--repo", default=".", show_default=True)
@@ -647,7 +675,10 @@ def cie_contracts(uid: str, repo: str, as_json: bool, limit: int) -> None:
         click.echo(json.dumps(result, indent=2))
     else:
         console.print(f"\n[bold]{result.get('company')}[/bold]  [dim]{uid}[/dim]")
-        console.print(f"Contracts: {result['contract_count']}  |  Total: ${result['total_value']:,.2f}  |  Avg: ${result['average_value']:,.2f}")
+        console.print(
+            f"Contracts: {result['contract_count']}  |  Total: ${result['total_value']:,.2f}"
+            f"  |  Avg: ${result['average_value']:,.2f}"
+        )
         t = Table(title="Awarded Contracts", show_lines=False)
         t.add_column("UID", style="dim", width=16)
         t.add_column("Tender / Contract")
@@ -665,6 +696,7 @@ def cie_contracts(uid: str, repo: str, as_json: bool, limit: int) -> None:
 
 
 # ── tkg cie-competitors ───────────────────────────────────────────────────────
+
 
 @main.command("cie-competitors")
 @click.argument("uid")
@@ -696,6 +728,7 @@ def cie_competitors(uid: str, repo: str, as_json: bool, limit: int) -> None:
 
 
 # ── tkg cie-timeline ──────────────────────────────────────────────────────────
+
 
 @main.command("cie-timeline")
 @click.argument("uid")
@@ -732,6 +765,7 @@ def cie_timeline(uid: str, repo: str, as_json: bool) -> None:
 
 # ── tkg cie-most-connected ────────────────────────────────────────────────────
 
+
 @main.command("cie-most-connected")
 @click.option("--repo", default=".", show_default=True)
 @click.option("--json", "as_json", is_flag=True)
@@ -750,8 +784,13 @@ def cie_most_connected(repo: str, as_json: bool, limit: int) -> None:
         t.add_column("In edges", justify="right")
         t.add_column("Total", justify="right", style="bold")
         for row in result.get("companies", []):
-            t.add_row(row["uid"], row["name"][:50],
-                      str(row["out_edges"]), str(row["in_edges"]), str(row["total_edges"]))
+            t.add_row(
+                row["uid"],
+                row["name"][:50],
+                str(row["out_edges"]),
+                str(row["in_edges"]),
+                str(row["total_edges"]),
+            )
         console.print(t)
     db.close()
 
@@ -761,6 +800,7 @@ def cie_most_connected(repo: str, as_json: bool, limit: int) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── tkg rie-explain ───────────────────────────────────────────────────────────
+
 
 @main.command("rie-explain")
 @click.argument("uid_a")
@@ -780,7 +820,7 @@ def rie_explain(uid_a: str, uid_b: str, repo: str, as_json: bool) -> None:
         console.print(f"  Strength  : [bold]{result['relationship_strength']}[/bold]")
         console.print(f"  Confidence: {result['confidence']}")
         console.print(f"  Evidence  : {result['evidence_count']} signals")
-        console.print(f"\n[bold]Explanation:[/bold]")
+        console.print("\n[bold]Explanation:[/bold]")
         console.print(f"  {result['explanation_text']}")
         if result.get("direct_relations"):
             console.print(f"\n[bold]Direct edges:[/bold] {len(result['direct_relations'])}")
@@ -791,15 +831,16 @@ def rie_explain(uid_a: str, uid_b: str, repo: str, as_json: bool) -> None:
             names = ", ".join(i["name"] for i in result["shared_industries"][:5])
             console.print(f"[bold]Shared industries:[/bold] {names}")
         if result.get("shared_locations"):
-            names = ", ".join(l["name"] for l in result["shared_locations"][:5])
+            names = ", ".join(loc["name"] for loc in result["shared_locations"][:5])
             console.print(f"[bold]Shared locations:[/bold] {names}")
         if result.get("shortest_path"):
-            console.print(f"\n[bold]Shortest path:[/bold]")
+            console.print("\n[bold]Shortest path:[/bold]")
             console.print(f"  {result.get('explanation_text', '')}")
     db.close()
 
 
 # ── tkg rie-strength ──────────────────────────────────────────────────────────
+
 
 @main.command("rie-strength")
 @click.argument("uid_a")
@@ -829,6 +870,7 @@ def rie_strength(uid_a: str, uid_b: str, repo: str, as_json: bool) -> None:
 
 # ── tkg rie-path ──────────────────────────────────────────────────────────────
 
+
 @main.command("rie-path")
 @click.argument("uid_a")
 @click.argument("uid_b")
@@ -851,6 +893,7 @@ def rie_path(uid_a: str, uid_b: str, repo: str, as_json: bool, max_depth: int) -
 
 
 # ── tkg rie-infer ─────────────────────────────────────────────────────────────
+
 
 @main.command("rie-infer")
 @click.argument("uid")
@@ -881,14 +924,18 @@ def rie_infer(uid: str, repo: str, as_json: bool, limit: int) -> None:
             t.add_column("Strength", justify="right")
             t.add_column("Confidence", justify="right")
             for item in items[:10]:
-                t.add_row(item["uid"], item["name"][:50],
-                          str(item.get("strength", "")),
-                          str(item.get("confidence", "")))
+                t.add_row(
+                    item["uid"],
+                    item["name"][:50],
+                    str(item.get("strength", "")),
+                    str(item.get("confidence", "")),
+                )
             console.print(t)
     db.close()
 
 
 # ── tkg rie-clusters ──────────────────────────────────────────────────────────
+
 
 @main.command("rie-clusters")
 @click.argument("location_or_industry")
@@ -921,12 +968,14 @@ def rie_clusters(location_or_industry: str, repo: str, as_json: bool, limit: int
 # Competitive Intelligence Engine commands
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def _get_cei(repo: str) -> tuple[object, CompetitiveIntelligenceEngine]:
     db, _ = _get_biz_engine(repo)
     return db, CompetitiveIntelligenceEngine(db.biz_repo)
 
 
 # ── tkg cei-profile ───────────────────────────────────────────────────────────
+
 
 @main.command("cei-profile")
 @click.argument("uid")
@@ -941,15 +990,20 @@ def cei_profile(uid: str, repo: str, as_json: bool) -> None:
     else:
         console.print(f"\n[bold cyan]{result['name']}[/bold cyan]  [{uid}]")
         wr = result.get("win_rate", {})
-        console.print(f"  Wins: {wr.get('wins', 0)}  |  Bids: {wr.get('bids', 0)}  |  Win Rate: {wr.get('win_rate', 0):.1%}")
+        console.print(
+            f"  Wins: {wr.get('wins', 0)}  |  Bids: {wr.get('bids', 0)}  |  Win Rate: {wr.get('win_rate', 0):.1%}"
+        )
         pressure = result.get("competitive_pressure", {})
-        console.print(f"  Pressure: [bold]{pressure.get('competitive_pressure_score', 0):.3f}[/bold]  ({pressure.get('pressure_level', '?')})")
+        score = pressure.get("competitive_pressure_score", 0)
+        level = pressure.get("pressure_level", "?")
+        console.print(f"  Pressure: [bold]{score:.3f}[/bold]  ({level})")
         dc = result.get("direct_competitors", {})
         console.print(f"  Direct competitors: {dc.get('competitor_count', 0)}")
     db.close()
 
 
 # ── tkg cei-win-rate ──────────────────────────────────────────────────────────
+
 
 @main.command("cei-win-rate")
 @click.argument("uid")
@@ -973,6 +1027,7 @@ def cei_win_rate(uid: str, repo: str, as_json: bool) -> None:
 
 
 # ── tkg cei-growth ────────────────────────────────────────────────────────────
+
 
 @main.command("cei-growth")
 @click.argument("uid")
@@ -999,6 +1054,7 @@ def cei_growth(uid: str, repo: str, as_json: bool) -> None:
 
 # ── tkg cei-competitors ───────────────────────────────────────────────────────
 
+
 @main.command("cei-competitors")
 @click.argument("uid")
 @click.option("--repo", default=".", show_default=True)
@@ -1008,8 +1064,7 @@ def cei_growth(uid: str, repo: str, as_json: bool) -> None:
 def cei_competitors(uid: str, repo: str, as_json: bool, limit: int, emerging: bool) -> None:
     """Direct or emerging competitors for a company."""
     db, cei = _get_cei(repo)
-    result = (cei.emerging_competitors(uid, limit=limit) if emerging
-              else cei.direct_competitors(uid, limit=limit))
+    result = cei.emerging_competitors(uid, limit=limit) if emerging else cei.direct_competitors(uid, limit=limit)
     if as_json or "error" in result:
         click.echo(json.dumps(result, indent=2))
     else:
@@ -1030,12 +1085,17 @@ def cei_competitors(uid: str, repo: str, as_json: bool, limit: int, emerging: bo
 
 # ── tkg cei-market-share ──────────────────────────────────────────────────────
 
+
 @main.command("cei-market-share")
 @click.argument("scope_uid")
 @click.option("--repo", default=".", show_default=True)
 @click.option("--json", "as_json", is_flag=True)
-@click.option("--by", default="company", show_default=True,
-              type=click.Choice(["company", "year", "buyer", "city", "province", "industry"]))
+@click.option(
+    "--by",
+    default="company",
+    show_default=True,
+    type=click.Choice(["company", "year", "buyer", "city", "province", "industry"]),
+)
 @click.option("--limit", default=20, show_default=True)
 def cei_market_share(scope_uid: str, repo: str, as_json: bool, by: str, limit: int) -> None:
     """Market share breakdown for a scope (buyer org, industry, city, province)."""
@@ -1058,12 +1118,17 @@ def cei_market_share(scope_uid: str, repo: str, as_json: bool, by: str, limit: i
 
 # ── tkg cei-rankings ──────────────────────────────────────────────────────────
 
+
 @main.command("cei-rankings")
 @click.argument("scope_uid")
 @click.option("--repo", default=".", show_default=True)
 @click.option("--json", "as_json", is_flag=True)
-@click.option("--by", default="wins", show_default=True,
-              type=click.Choice(["wins", "bids", "win_rate", "market_share"]))
+@click.option(
+    "--by",
+    default="wins",
+    show_default=True,
+    type=click.Choice(["wins", "bids", "win_rate", "market_share"]),
+)
 @click.option("--limit", default=20, show_default=True)
 def cei_rankings(scope_uid: str, repo: str, as_json: bool, by: str, limit: int) -> None:
     """Ranked companies for a market scope."""
@@ -1081,13 +1146,20 @@ def cei_rankings(scope_uid: str, repo: str, as_json: bool, by: str, limit: int) 
         t.add_column("Win Rate", justify="right")
         t.add_column("Share", justify="right")
         for i, row in enumerate(result.get("rankings", []), 1):
-            t.add_row(str(i), row["uid"], row["name"][:48],
-                      str(row["wins"]), f"{row['win_rate']:.1%}", f"{row['market_share']:.1%}")
+            t.add_row(
+                str(i),
+                row["uid"],
+                row["name"][:48],
+                str(row["wins"]),
+                f"{row['win_rate']:.1%}",
+                f"{row['market_share']:.1%}",
+            )
         console.print(t)
     db.close()
 
 
 # ── tkg cei-pressure ──────────────────────────────────────────────────────────
+
 
 @main.command("cei-pressure")
 @click.argument("uid")
@@ -1101,7 +1173,9 @@ def cei_pressure(uid: str, repo: str, as_json: bool) -> None:
         click.echo(json.dumps(result, indent=2))
     else:
         console.print(f"\n[bold]{result['name']}[/bold]  [{uid}]")
-        console.print(f"  Pressure score: [bold]{result['competitive_pressure_score']:.3f}[/bold]  ({result['pressure_level']})")
+        console.print(
+            f"  Pressure score: [bold]{result['competitive_pressure_score']:.3f}[/bold]  ({result['pressure_level']})"
+        )
         t = Table(title="Components", show_lines=False)
         t.add_column("Component")
         t.add_column("Value", justify="right")
@@ -1115,12 +1189,14 @@ def cei_pressure(uid: str, repo: str, as_json: bool) -> None:
 # Buyer Intelligence Engine commands
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def _get_bie(repo: str) -> tuple[object, BuyerIntelligenceEngine]:
     db, _ = _get_biz_engine(repo)
     return db, BuyerIntelligenceEngine(db.biz_repo)
 
 
 # ── tkg bie-profile ────────────────────────────────────────────────────────
+
 
 @main.command("bie-profile")
 @click.argument("uid")
@@ -1139,11 +1215,14 @@ def bie_profile(uid: str, repo: str, as_json: bool) -> None:
         console.print(f"  Active suppliers: {s.get('active_suppliers', 0)}")
         console.print(f"  Award HHI:        {s.get('award_hhi', 0):.4f}")
         bc = result.get("buyer_competitiveness", {})
-        console.print(f"  Competitiveness:  [bold]{bc.get('competitiveness_score', 0):.3f}[/bold]  ({bc.get('competitiveness_level', '?')})")
+        score = bc.get("competitiveness_score", 0)
+        level = bc.get("competitiveness_level", "?")
+        console.print(f"  Competitiveness:  [bold]{score:.3f}[/bold]  ({level})")
     db.close()
 
 
 # ── tkg bie-suppliers ────────────────────────────────────────────────────
+
 
 @main.command("bie-suppliers")
 @click.argument("uid")
@@ -1152,16 +1231,18 @@ def bie_profile(uid: str, repo: str, as_json: bool) -> None:
 @click.option("--limit", default=20, show_default=True)
 @click.option("--preferred", is_flag=True, help="Show only preferred suppliers (awarded ≥2 times)")
 @click.option("--min-awards", default=2, show_default=True)
-def bie_suppliers(uid: str, repo: str, as_json: bool, limit: int,
-                  preferred: bool, min_awards: int) -> None:
+def bie_suppliers(uid: str, repo: str, as_json: bool, limit: int, preferred: bool, min_awards: int) -> None:
     """Supplier roster or preferred suppliers for a buyer."""
     db, bie = _get_bie(repo)
-    result = (bie.preferred_suppliers(uid, min_awards=min_awards, limit=limit)
-              if preferred else bie.supplier_roster(uid, limit=limit))
+    result = (
+        bie.preferred_suppliers(uid, min_awards=min_awards, limit=limit)
+        if preferred
+        else bie.supplier_roster(uid, limit=limit)
+    )
     if as_json or "error" in result:
         click.echo(json.dumps(result, indent=2))
     else:
-        key   = "preferred_suppliers" if preferred else "suppliers"
+        key = "preferred_suppliers" if preferred else "suppliers"
         title = "Preferred Suppliers" if preferred else "Supplier Roster"
         count = result.get("preferred_supplier_count" if preferred else "supplier_count", 0)
         console.print(f"\n[bold]{result['name']}[/bold]  — {count} {title}")
@@ -1171,13 +1252,13 @@ def bie_suppliers(uid: str, repo: str, as_json: bool, limit: int,
         t.add_column("Awards", justify="right", style="green")
         t.add_column("Win Rate", justify="right")
         for s in result.get(key, []):
-            t.add_row(s["uid"], s["name"][:50],
-                      str(s["award_count"]), f"{s['win_rate']:.1%}")
+            t.add_row(s["uid"], s["name"][:50], str(s["award_count"]), f"{s['win_rate']:.1%}")
         console.print(t)
     db.close()
 
 
 # ── tkg bie-patterns ─────────────────────────────────────────────────────
+
 
 @main.command("bie-patterns")
 @click.argument("uid")
@@ -1198,8 +1279,12 @@ def bie_patterns(uid: str, repo: str, as_json: bool, seasonality: bool) -> None:
         t.add_column("Share", justify="right")
         t.add_column("Seasonality Index", justify="right")
         for row in result.get("monthly", []):
-            t.add_row(row["month_name"], str(row["count"]),
-                      f"{row['share']:.1%}", f"{row['seasonality_index']:+.3f}")
+            t.add_row(
+                row["month_name"],
+                str(row["count"]),
+                f"{row['share']:.1%}",
+                f"{row['seasonality_index']:+.3f}",
+            )
         console.print(t)
     else:
         console.print(f"\n[bold]{result['name']}[/bold]  — Buying Patterns")
@@ -1213,6 +1298,7 @@ def bie_patterns(uid: str, repo: str, as_json: bool, seasonality: bool) -> None:
 
 
 # ── tkg bie-timeline ─────────────────────────────────────────────────────
+
 
 @main.command("bie-timeline")
 @click.argument("uid")
@@ -1249,6 +1335,7 @@ def bie_timeline(uid: str, repo: str, as_json: bool) -> None:
 
 # ── tkg bie-score ──────────────────────────────────────────────────────────
 
+
 @main.command("bie-score")
 @click.argument("uid")
 @click.option("--repo", default=".", show_default=True)
@@ -1266,7 +1353,9 @@ def bie_score(uid: str, repo: str, as_json: bool, diversity: bool) -> None:
         console.print(f"  Unique suppliers: {result['unique_suppliers']}  —  HHI: {result['award_hhi']:.4f}")
     else:
         console.print(f"\n[bold]{result['name']}[/bold]  [{uid}]")
-        console.print(f"  Competitiveness: [bold]{result['competitiveness_score']:.3f}[/bold]  ({result['competitiveness_level']})")
+        score = result["competitiveness_score"]
+        level = result["competitiveness_level"]
+        console.print(f"  Competitiveness: [bold]{score:.3f}[/bold]  ({level})")
         t = Table(title="Components", show_lines=False)
         t.add_column("Component")
         t.add_column("Value", justify="right")
@@ -1277,6 +1366,7 @@ def bie_score(uid: str, repo: str, as_json: bool, diversity: bool) -> None:
 
 
 # ── tkg bie-forecast ─────────────────────────────────────────────────────
+
 
 @main.command("bie-forecast")
 @click.argument("uid")
@@ -1296,13 +1386,13 @@ def bie_forecast(uid: str, repo: str, as_json: bool) -> None:
         console.print(f"  Months since last:    {result['months_since_last']}")
         if result["estimated_next_year"]:
             console.print(
-                f"  Est. next tender:     "
-                f"{result['estimated_next_month_name']} {result['estimated_next_year']}"
+                f"  Est. next tender:     {result['estimated_next_month_name']} {result['estimated_next_year']}"
             )
     db.close()
 
 
 # ── tkg bie-concentration ──────────────────────────────────────────────────
+
 
 @main.command("bie-concentration")
 @click.argument("uid")
@@ -1331,6 +1421,7 @@ def bie_concentration(uid: str, repo: str, as_json: bool) -> None:
 
 # ── tkg bie-loyalty ────────────────────────────────────────────────────────
 
+
 @main.command("bie-loyalty")
 @click.argument("uid")
 @click.option("--repo", default=".", show_default=True)
@@ -1344,15 +1435,16 @@ def bie_loyalty(uid: str, repo: str, as_json: bool, limit: int) -> None:
         click.echo(json.dumps(result, indent=2))
     else:
         console.print(f"\n[bold]{result['name']}[/bold]  [{uid}]")
-        console.print(f"  Overall loyalty: [bold]{result['overall_loyalty_score']:.3f}[/bold]  ({result['loyalty_interpretation']})")
+        score = result["overall_loyalty_score"]
+        interp = result["loyalty_interpretation"]
+        console.print(f"  Overall loyalty: [bold]{score:.3f}[/bold]  ({interp})")
         t = Table(title="Supplier Loyalty Index", show_lines=False)
         t.add_column("UID", style="dim", width=16)
         t.add_column("Name")
         t.add_column("Awards", justify="right")
         t.add_column("Loyalty Index", justify="right", style="bold")
         for s in result.get("supplier_loyalty", []):
-            t.add_row(s["uid"], s["name"][:50],
-                      str(s["award_count"]), f"{s['loyalty_index']:.4f}")
+            t.add_row(s["uid"], s["name"][:50], str(s["award_count"]), f"{s['loyalty_index']:.4f}")
         console.print(t)
     db.close()
 
@@ -1361,12 +1453,14 @@ def bie_loyalty(uid: str, repo: str, as_json: bool, limit: int) -> None:
 # Opportunity Intelligence Engine commands
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def _get_oie(repo: str) -> tuple[object, OpportunityIntelligenceEngine]:
     db, _ = _get_biz_engine(repo)
     return db, OpportunityIntelligenceEngine(db.biz_repo)
 
 
 # ── tkg oie-profile ────────────────────────────────────────────────────────
+
 
 @main.command("oie-profile")
 @click.argument("company_uid")
@@ -1383,13 +1477,14 @@ def oie_profile(company_uid: str, tender_uid: str, repo: str, as_json: bool) -> 
         console.print(f"\n[bold]{result.get('tender_name', tender_uid)}[/bold]  [{tender_uid}]")
         console.print(f"  Company: {result.get('company_name', company_uid)}")
         score = result.get("score", 0)
-        rec   = result.get("recommendation", "")
+        rec = result.get("recommendation", "")
         color = "green" if "Pursue" in rec else ("yellow" if rec in ("Monitor", "Strategic Investment") else "red")
         console.print(f"  Score: [bold]{score:.1f}/100[/bold]  Recommendation: [{color}]{rec}[/{color}]")
     db.close()
 
 
 # ── tkg oie-score ──────────────────────────────────────────────────────────
+
 
 @main.command("oie-score")
 @click.argument("company_uid")
@@ -1403,20 +1498,27 @@ def oie_score(company_uid: str, tender_uid: str, repo: str, as_json: bool) -> No
     if as_json or "error" in result:
         click.echo(json.dumps(result, indent=2))
     else:
-        console.print(f"\n[bold]{result.get('tender_name', tender_uid)}[/bold]  Score: [bold]{result.get('score', 0):.1f}/100[/bold]")
+        name = result.get("tender_name", tender_uid)
+        score = result.get("score", 0)
+        console.print(f"\n[bold]{name}[/bold]  Score: [bold]{score:.1f}/100[/bold]")
         t = Table(title="Score Breakdown", show_lines=False)
         t.add_column("Dimension")
         t.add_column("Points", justify="right")
         t.add_column("Weight", justify="right")
         t.add_column("Raw", justify="right")
         for dim, val in result.get("dimensions", {}).items():
-            t.add_row(dim.replace("_", " ").title(),
-                      f"{val['score']:.1f}", str(val["weight"]), f"{val['raw']:.0%}")
+            t.add_row(
+                dim.replace("_", " ").title(),
+                f"{val['score']:.1f}",
+                str(val["weight"]),
+                f"{val['raw']:.0%}",
+            )
         console.print(t)
     db.close()
 
 
 # ── tkg oie-recommend ──────────────────────────────────────────────────────
+
 
 @main.command("oie-recommend")
 @click.argument("company_uid")
@@ -1430,9 +1532,11 @@ def oie_recommend(company_uid: str, tender_uid: str, repo: str, as_json: bool) -
     if as_json or "error" in result:
         click.echo(json.dumps(result, indent=2))
     else:
-        rec   = result.get("recommendation", "")
+        rec = result.get("recommendation", "")
         color = "green" if "Pursue" in rec else ("yellow" if rec in ("Monitor", "Strategic Investment") else "red")
-        console.print(f"\n  Recommendation: [{color}][bold]{rec}[/bold][/{color}]  (score {result.get('score', 0):.1f})")
+        console.print(
+            f"\n  Recommendation: [{color}][bold]{rec}[/bold][/{color}]  (score {result.get('score', 0):.1f})"
+        )
         for r in result.get("why_pursue", []):
             console.print(f"  [green]✓[/green] {r}")
         for r in result.get("why_ignore", []):
@@ -1443,6 +1547,7 @@ def oie_recommend(company_uid: str, tender_uid: str, repo: str, as_json: bool) -
 
 
 # ── tkg oie-explain ────────────────────────────────────────────────────────
+
 
 @main.command("oie-explain")
 @click.argument("company_uid")
@@ -1472,6 +1577,7 @@ def oie_explain(company_uid: str, tender_uid: str, repo: str, as_json: bool) -> 
 
 # ── tkg oie-best ───────────────────────────────────────────────────────────
 
+
 @main.command("oie-best")
 @click.argument("company_uid")
 @click.option("--repo", default=".", show_default=True)
@@ -1493,13 +1599,13 @@ def oie_best(company_uid: str, repo: str, as_json: bool, limit: int) -> None:
         t.add_column("Value", justify="right")
         for i, opp in enumerate(result.get("top_opportunities", []), 1):
             val = f"${opp['value']:,.0f}" if opp.get("value") else "N/A"
-            t.add_row(str(i), opp["tender_name"][:60],
-                      f"{opp['score']:.1f}", opp["recommendation"], val)
+            t.add_row(str(i), opp["tender_name"][:60], f"{opp['score']:.1f}", opp["recommendation"], val)
         console.print(t)
     db.close()
 
 
 # ── tkg oie-timeline ───────────────────────────────────────────────────────
+
 
 @main.command("oie-timeline")
 @click.argument("company_uid")
@@ -1514,13 +1620,20 @@ def oie_timeline(company_uid: str, tender_uid: str, repo: str, as_json: bool) ->
         click.echo(json.dumps(result, indent=2))
     else:
         console.print(f"\n[bold]{result.get('tender_name', tender_uid)}[/bold]")
-        console.print(f"  Urgency: [bold]{result.get('submission_urgency', 'unknown')}[/bold]  — Prep: {result.get('preparation_effort', 'unknown')}")
-        console.print(f"  Deadline: {result.get('deadline', 'N/A')}  ({result.get('months_until_deadline', '?')} months)")
-        console.print(f"  Comparable wins: {len(result.get('comparable_wins', []))}  — losses: {len(result.get('comparable_losses', []))}")
+        urgency = result.get("submission_urgency", "unknown")
+        prep = result.get("preparation_effort", "unknown")
+        console.print(f"  Urgency: [bold]{urgency}[/bold]  — Prep: {prep}")
+        console.print(
+            f"  Deadline: {result.get('deadline', 'N/A')}  ({result.get('months_until_deadline', '?')} months)"
+        )
+        wins = len(result.get("comparable_wins", []))
+        losses = len(result.get("comparable_losses", []))
+        console.print(f"  Comparable wins: {wins}  — losses: {losses}")
     db.close()
 
 
 # ── tkg oie-risk ───────────────────────────────────────────────────────────
+
 
 @main.command("oie-risk")
 @click.argument("company_uid")
@@ -1534,7 +1647,9 @@ def oie_risk(company_uid: str, tender_uid: str, repo: str, as_json: bool) -> Non
     if as_json or "error" in result:
         click.echo(json.dumps(result, indent=2))
     else:
-        console.print(f"\n[bold]{result.get('tender_name', tender_uid)}[/bold]  Overall risk: [bold]{result.get('overall_risk', 'unknown')}[/bold]")
+        name = result.get("tender_name", tender_uid)
+        risk = result.get("overall_risk", "unknown")
+        console.print(f"\n[bold]{name}[/bold]  Overall risk: [bold]{risk}[/bold]")
         t = Table(title="Risk Factors", show_lines=False)
         t.add_column("Factor")
         t.add_column("Severity")
@@ -1549,6 +1664,7 @@ def oie_risk(company_uid: str, tender_uid: str, repo: str, as_json: bool) -> Non
 
 
 # ── tkg oie-portfolio ──────────────────────────────────────────────────────
+
 
 @main.command("oie-portfolio")
 @click.argument("company_uid")
@@ -1575,6 +1691,7 @@ def oie_portfolio(company_uid: str, tender_uid: str, repo: str, as_json: bool) -
 
 # ── tkg oie-similar ────────────────────────────────────────────────────────
 
+
 @main.command("oie-similar")
 @click.argument("company_uid")
 @click.argument("tender_uid")
@@ -1588,7 +1705,9 @@ def oie_similar(company_uid: str, tender_uid: str, repo: str, as_json: bool, lim
     if as_json or "error" in result:
         click.echo(json.dumps(result, indent=2))
     else:
-        console.print(f"\n[bold]{result.get('tender_name', tender_uid)}[/bold]  — {result.get('similar_count', 0)} similar found")
+        console.print(
+            f"\n[bold]{result.get('tender_name', tender_uid)}[/bold]  — {result.get('similar_count', 0)} similar found"
+        )
         t = Table(title="Similar Historical Opportunities", show_lines=False)
         t.add_column("Tender")
         t.add_column("Outcome")
@@ -1598,14 +1717,19 @@ def oie_similar(company_uid: str, tender_uid: str, repo: str, as_json: bool, lim
         for s in result.get("similar", []):
             color = "green" if s["outcome"] == "win" else "red"
             val = f"${s['value']:,.0f}" if s.get("value") else "N/A"
-            t.add_row(s["name"][:50], f"[{color}]{s['outcome']}[/{color}]",
-                      f"{s['similarity']:.2f}", val,
-                      ", ".join(s.get("similarity_reasons", [])))
+            t.add_row(
+                s["name"][:50],
+                f"[{color}]{s['outcome']}[/{color}]",
+                f"{s['similarity']:.2f}",
+                val,
+                ", ".join(s.get("similarity_reasons", [])),
+            )
         console.print(t)
     db.close()
 
 
 # ── tkg oie-executive ──────────────────────────────────────────────────────
+
 
 @main.command("oie-executive")
 @click.argument("company_uid")
@@ -1620,7 +1744,9 @@ def oie_executive(company_uid: str, repo: str, as_json: bool, limit: int) -> Non
         click.echo(json.dumps(result, indent=2))
     else:
         console.print(f"\n[bold]Executive Summary[/bold]: {result.get('company_name', company_uid)}")
-        console.print(f"  Tenders scored: {result.get('total_tenders_scored', 0)}  — Confidence: {result.get('confidence', 0):.2f}")
+        scored = result.get("total_tenders_scored", 0)
+        confidence = result.get("confidence", 0)
+        console.print(f"  Tenders scored: {scored}  — Confidence: {confidence:.2f}")
         if result.get("top_opportunities"):
             console.print("\n  [bold green]Top Opportunities:[/bold green]")
             for opp in result["top_opportunities"]:
@@ -1641,6 +1767,7 @@ def oie_executive(company_uid: str, repo: str, as_json: bool, limit: int) -> Non
 # ────────────────────────────────────────────────────────────────────────────
 # Executive Decision Engine commands
 # ────────────────────────────────────────────────────────────────────────────
+
 
 def _get_ede(repo: str) -> tuple:
     repo_path = Path(repo).resolve()
@@ -1664,9 +1791,8 @@ def ede_decision(company_uid: str, repo: str, limit: int, as_json: bool) -> None
         click.echo(json.dumps(result, indent=2))
     else:
         co_name = result.get("company_name", company_uid)
-        conf    = result.get("confidence", 0)
-        console.print(f"\n[bold cyan]Executive Decision — {co_name}[/bold cyan]  "
-                      f"Confidence: [bold]{conf:.0%}[/bold]\n")
+        conf = result.get("confidence", 0)
+        console.print(f"\n[bold cyan]Executive Decision — {co_name}[/bold cyan]  Confidence: [bold]{conf:.0%}[/bold]\n")
         for line in result.get("executive_narrative", []):
             console.print(f"  {line}")
         prios = result.get("strategic_priorities", {}).get("priorities", [])
@@ -1704,10 +1830,12 @@ def ede_situation(company_uid: str, repo: str, as_json: bool) -> None:
     if as_json or "error" in result:
         click.echo(json.dumps(result, indent=2))
     else:
-        console.print(f"\n[bold]{result.get('company_name', company_uid)}[/bold]  "
-                      f"Health: [bold]{result.get('health_score', 0):.0%}[/bold]  "
-                      f"Win rate: {result.get('win_rate') or 0:.0%}  "
-                      f"Trend: {result.get('trend_label', 'unknown')}")
+        console.print(
+            f"\n[bold]{result.get('company_name', company_uid)}[/bold]  "
+            f"Health: [bold]{result.get('health_score', 0):.0%}[/bold]  "
+            f"Win rate: {result.get('win_rate') or 0:.0%}  "
+            f"Trend: {result.get('trend_label', 'unknown')}"
+        )
         buyers = result.get("top_buyers", [])
         if buyers:
             t = Table(title="Top Buyers", show_lines=False)
@@ -1790,9 +1918,11 @@ def ede_risks(company_uid: str, repo: str, as_json: bool) -> None:
         click.echo(json.dumps(result, indent=2))
     else:
         overall = result.get("overall_risk", "unknown")
-        color   = "red" if overall == "high" else ("yellow" if overall == "medium" else "green")
-        console.print(f"\n[bold]Risk Register[/bold]  Overall: [{color}]{overall}[/{color}]  "
-                      f"({result.get('risk_count', 0)} risks)")
+        color = "red" if overall == "high" else ("yellow" if overall == "medium" else "green")
+        console.print(
+            f"\n[bold]Risk Register[/bold]  Overall: [{color}]{overall}[/{color}]  "
+            f"({result.get('risk_count', 0)} risks)"
+        )
         t = Table(show_lines=False)
         t.add_column("Source")
         t.add_column("Factor")

@@ -3,6 +3,7 @@ Repository indexer.
 Walks the repo, runs parsers, writes entities/relations to the graph DB,
 then runs a post-index resolution pass to link unresolved targets.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -14,18 +15,36 @@ from typing import Callable, Optional
 
 import pathspec
 
-from .db import GraphDB, make_entity_id, make_relation_id, SCHEMA_VERSION
-from .models import Entity, EntityKind, Relation, RelationKind
+from .db import SCHEMA_VERSION, GraphDB, make_relation_id
+from .models import RelationKind
 from .parsers import get_parser
 
 # Files / directories to always skip
 _DEFAULT_IGNORE_DIRS = {
-    ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv",
-    "env", ".env", ".tox", "dist", "build", "target", ".next", ".nuxt",
-    "coverage", ".pytest_cache", ".mypy_cache", ".ruff_cache", "htmlcov",
-    ".eggs", "*.egg-info",
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "env",
+    ".env",
+    ".tox",
+    "dist",
+    "build",
+    "target",
+    ".next",
+    ".nuxt",
+    "coverage",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "htmlcov",
+    ".eggs",
+    "*.egg-info",
 }
-_MAX_FILE_BYTES = 512 * 1024   # skip files > 512 KB
+_MAX_FILE_BYTES = 512 * 1024  # skip files > 512 KB
 
 
 class Indexer:
@@ -122,6 +141,7 @@ class Indexer:
         if raw:
             try:
                 import ast as _ast
+
                 self._file_hashes = _ast.literal_eval(raw)
             except Exception:
                 self._file_hashes = {}
@@ -134,7 +154,8 @@ class Indexer:
 
             # Prune ignored directories in-place
             dirnames[:] = [
-                d for d in dirnames
+                d
+                for d in dirnames
                 if d not in _DEFAULT_IGNORE_DIRS
                 and not d.startswith(".")
                 and not (self._ignore_spec and self._ignore_spec.match_file(str(rel_dir / d) + "/"))
@@ -178,6 +199,7 @@ class Indexer:
 
         for row in rows:
             import json as _json
+
             extra = _json.loads(row["extra"])
             unresolved = extra.get("unresolved_target")
             if not unresolved:
@@ -211,9 +233,7 @@ class Indexer:
             with self.db.transaction() as c:
                 for new_target_id, new_rel_id, old_id in updates:
                     # Fetch full row before deleting it
-                    row = c.execute(
-                        "SELECT * FROM relations WHERE id = ?", (old_id,)
-                    ).fetchone()
+                    row = c.execute("SELECT * FROM relations WHERE id = ?", (old_id,)).fetchone()
                     if not row:
                         continue
                     c.execute("DELETE FROM relations WHERE id = ?", (old_id,))
@@ -222,8 +242,16 @@ class Indexer:
                         """INSERT OR IGNORE INTO relations
                            (id, source_id, target_id, kind, file_path, line, weight, extra)
                            VALUES (?,?,?,?,?,?,?,?)""",
-                        (new_rel_id, row["source_id"], new_target_id, row["kind"],
-                         row["file_path"], row["line"], row["weight"], row["extra"]),
+                        (
+                            new_rel_id,
+                            row["source_id"],
+                            new_target_id,
+                            row["kind"],
+                            row["file_path"],
+                            row["line"],
+                            row["weight"],
+                            row["extra"],
+                        ),
                     )
 
         return resolved

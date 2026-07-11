@@ -33,16 +33,16 @@ Public API
   buyer_timeline(uid)             → year-by-year procurement timeline
   tender_forecast(uid)            → probability and timing of future tenders
 """
+
 from __future__ import annotations
 
-import math
 import datetime
+import math
 from collections import defaultdict
 from typing import Any, Optional
 
 from .domain import BizEntityKind, BizRelationKind
 from .repository._base import BizRepository
-
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -56,19 +56,30 @@ _BID_KINDS = [
 ]
 
 _AWARDED_KIND = BizRelationKind.AWARDED_TO
-_ISSUED_BY    = BizRelationKind.ISSUED_BY    # tender → org
-_ISSUES       = BizRelationKind.ISSUES       # org → tender (reverse)
+_ISSUED_BY = BizRelationKind.ISSUED_BY  # tender → org
+_ISSUES = BizRelationKind.ISSUES  # org → tender (reverse)
 
 _MONTH_NAMES = [
-    "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 ]
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _ev(entity_uid: str, rel_kind: str, target_uid: str,
-        entity_name: str = "", target_name: str = "") -> dict:
+
+def _ev(entity_uid: str, rel_kind: str, target_uid: str, entity_name: str = "", target_name: str = "") -> dict:
     """Build a single evidence triple."""
     return {
         "entity_uid": entity_uid,
@@ -79,8 +90,7 @@ def _ev(entity_uid: str, rel_kind: str, target_uid: str,
     }
 
 
-def _confidence(evidence_count: int, base: float = 0.3,
-                scale: float = 0.07, cap_at: int = 10) -> float:
+def _confidence(evidence_count: int, base: float = 0.3, scale: float = 0.07, cap_at: int = 10) -> float:
     """Confidence grows with evidence volume, capped at 1.0."""
     return round(min(1.0, base + scale * min(cap_at, evidence_count)), 4)
 
@@ -122,8 +132,7 @@ def _safe_float(val: Any) -> Optional[float]:
         return None
 
 
-def _require_entity(repo: BizRepository, uid: str,
-                    allowed_kinds: Optional[list] = None) -> Optional[dict]:
+def _require_entity(repo: BizRepository, uid: str, allowed_kinds: Optional[list] = None) -> Optional[dict]:
     entity = repo.get(uid)
     if not entity:
         return {"error": f"Entity not found: {uid}"}
@@ -135,6 +144,7 @@ def _require_entity(repo: BizRepository, uid: str,
 
 # ── Graph traversal helpers ───────────────────────────────────────────────────
 
+
 def _buyer_tenders(repo: BizRepository, buyer_uid: str) -> list[dict]:
     """
     Return all tenders issued by this buyer.
@@ -142,16 +152,16 @@ def _buyer_tenders(repo: BizRepository, buyer_uid: str) -> list[dict]:
     """
     results = []
     # Tenders store ISSUED_BY pointing outward to org → get reverse (in) direction
-    for rel, ent in repo.get_neighbors(
-        buyer_uid, direction="in", kinds=[_ISSUED_BY], limit=5000
-    ):
+    for rel, ent in repo.get_neighbors(buyer_uid, direction="in", kinds=[_ISSUED_BY], limit=5000):
         if ent.kind == BizEntityKind.TENDER:
-            results.append({
-                "uid": ent.uid,
-                "name": ent.name,
-                "attributes": ent.attributes,
-                "relation_kind": rel.kind.value,
-            })
+            results.append(
+                {
+                    "uid": ent.uid,
+                    "name": ent.name,
+                    "attributes": ent.attributes,
+                    "relation_kind": rel.kind.value,
+                }
+            )
     return results
 
 
@@ -160,25 +170,22 @@ def _tender_participants(repo: BizRepository, tender_uid: str) -> list[dict]:
     Return all companies connected to a tender (bidders, winners, participants).
     """
     results = []
-    for rel, ent in repo.get_neighbors(
-        tender_uid, direction="in", kinds=_BID_KINDS, limit=500
-    ):
+    for rel, ent in repo.get_neighbors(tender_uid, direction="in", kinds=_BID_KINDS, limit=500):
         if ent.kind == BizEntityKind.COMPANY:
-            results.append({
-                "uid": ent.uid,
-                "name": ent.name,
-                "role": rel.kind.value,
-                "attributes": ent.attributes,
-            })
+            results.append(
+                {
+                    "uid": ent.uid,
+                    "name": ent.name,
+                    "role": rel.kind.value,
+                    "attributes": ent.attributes,
+                }
+            )
     return results
 
 
 def _tender_winner(repo: BizRepository, tender_uid: str) -> Optional[dict]:
     """Return the awarded company dict, or None."""
-    for rel, ent in repo.get_neighbors(
-        tender_uid, direction="in",
-        kinds=[BizRelationKind.AWARDED_TO], limit=5
-    ):
+    for rel, ent in repo.get_neighbors(tender_uid, direction="in", kinds=[BizRelationKind.AWARDED_TO], limit=5):
         if ent.kind == BizEntityKind.COMPANY:
             return {"uid": ent.uid, "name": ent.name, "attributes": ent.attributes}
     return None
@@ -187,6 +194,7 @@ def _tender_winner(repo: BizRepository, tender_uid: str) -> Optional[dict]:
 # ═════════════════════════════════════════════════════════════════════════════
 # Engine
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 class BuyerIntelligenceEngine:
     """
@@ -214,21 +222,21 @@ class BuyerIntelligenceEngine:
             "uid": uid,
             "name": entity.name,
             "kind": entity.kind.value,
-            "summary":               self.buyer_summary(uid),
-            "supplier_roster":       self.supplier_roster(uid),
-            "preferred_suppliers":   self.preferred_suppliers(uid),
-            "supplier_loyalty":      self.supplier_loyalty(uid),
-            "supplier_diversity":    self.supplier_diversity(uid),
-            "buying_patterns":       self.buying_patterns(uid),
+            "summary": self.buyer_summary(uid),
+            "supplier_roster": self.supplier_roster(uid),
+            "preferred_suppliers": self.preferred_suppliers(uid),
+            "supplier_loyalty": self.supplier_loyalty(uid),
+            "supplier_diversity": self.supplier_diversity(uid),
+            "buying_patterns": self.buying_patterns(uid),
             "procurement_seasonality": self.procurement_seasonality(uid),
-            "preferred_industries":  self.preferred_industries(uid),
+            "preferred_industries": self.preferred_industries(uid),
             "preferred_contract_sizes": self.preferred_contract_sizes(uid),
             "avg_procurement_value": self.avg_procurement_value(uid),
-            "avg_bidder_count":      self.avg_bidder_count(uid),
-            "award_concentration":   self.award_concentration(uid),
+            "avg_bidder_count": self.avg_bidder_count(uid),
+            "award_concentration": self.award_concentration(uid),
             "buyer_competitiveness": self.buyer_competitiveness(uid),
-            "buyer_timeline":        self.buyer_timeline(uid),
-            "tender_forecast":       self.tender_forecast(uid),
+            "buyer_timeline": self.buyer_timeline(uid),
+            "tender_forecast": self.tender_forecast(uid),
         }
 
     # ── Summary ───────────────────────────────────────────────────────────────
@@ -248,7 +256,7 @@ class BuyerIntelligenceEngine:
 
         # Winner counts
         winner_counts: dict[str, int] = defaultdict(int)
-        winner_names: dict[str, str]  = {}
+        winner_names: dict[str, str] = {}
         for t in tenders:
             w = _tender_winner(self._repo, t["uid"])
             if w:
@@ -262,13 +270,13 @@ class BuyerIntelligenceEngine:
         top_supplier = None
         if winner_counts:
             top_uid = max(winner_counts, key=lambda k: winner_counts[k])
-            top_supplier = {"uid": top_uid, "name": winner_names[top_uid],
-                            "award_count": winner_counts[top_uid]}
+            top_supplier = {
+                "uid": top_uid,
+                "name": winner_names[top_uid],
+                "award_count": winner_counts[top_uid],
+            }
 
-        evidence = [
-            _ev(uid, "issued_by", t["uid"], entity.name, t["name"])
-            for t in tenders[:10]
-        ]
+        evidence = [_ev(uid, "issued_by", t["uid"], entity.name, t["name"]) for t in tenders[:10]]
 
         return {
             "uid": uid,
@@ -297,10 +305,10 @@ class BuyerIntelligenceEngine:
         tenders = _buyer_tenders(self._repo, uid)
 
         # per supplier: wins, total bids
-        sup_wins: dict[str, int]  = defaultdict(int)
-        sup_bids: dict[str, int]  = defaultdict(int)
+        sup_wins: dict[str, int] = defaultdict(int)
+        sup_bids: dict[str, int] = defaultdict(int)
         sup_names: dict[str, str] = {}
-        evidence: list[dict]      = []
+        evidence: list[dict] = []
 
         for t in tenders:
             participants = _tender_participants(self._repo, t["uid"])
@@ -309,23 +317,23 @@ class BuyerIntelligenceEngine:
                 sup_names[p["uid"]] = p["name"]
                 if p["role"] == BizRelationKind.AWARDED_TO.value:
                     sup_wins[p["uid"]] += 1
-                    evidence.append(
-                        _ev(t["uid"], "awarded_to", p["uid"], t["name"], p["name"])
-                    )
+                    evidence.append(_ev(t["uid"], "awarded_to", p["uid"], t["name"], p["name"]))
 
         suppliers = []
         for s_uid in set(sup_wins) | set(sup_bids):
-            wins   = sup_wins.get(s_uid, 0)
-            bids   = sup_bids.get(s_uid, 0)
+            wins = sup_wins.get(s_uid, 0)
+            bids = sup_bids.get(s_uid, 0)
             win_rt = round(wins / bids, 4) if bids else 0.0
-            suppliers.append({
-                "uid":       s_uid,
-                "name":      sup_names[s_uid],
-                "award_count": wins,
-                "bid_count":   bids,
-                "win_rate":    win_rt,
-                "confidence":  _confidence(wins),
-            })
+            suppliers.append(
+                {
+                    "uid": s_uid,
+                    "name": sup_names[s_uid],
+                    "award_count": wins,
+                    "bid_count": bids,
+                    "win_rate": win_rt,
+                    "confidence": _confidence(wins),
+                }
+            )
 
         suppliers.sort(key=lambda x: x["award_count"], reverse=True)
         return {
@@ -339,8 +347,7 @@ class BuyerIntelligenceEngine:
 
     # ── Preferred suppliers ───────────────────────────────────────────────────
 
-    def preferred_suppliers(self, uid: str, min_awards: int = 2,
-                             limit: int = 30) -> dict:
+    def preferred_suppliers(self, uid: str, min_awards: int = 2, limit: int = 30) -> dict:
         """
         Suppliers chosen at least ``min_awards`` times — the buyer's
         «go-to» suppliers.  Ranked by award count.
@@ -349,20 +356,14 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity   = self._repo.get(uid)
+        entity = self._repo.get(uid)
         roster_r = self.supplier_roster(uid, limit=5000)
-        tenders  = _buyer_tenders(self._repo, uid)
-        total    = len(tenders)
+        tenders = _buyer_tenders(self._repo, uid)
+        len(tenders)
 
-        preferred = [
-            s for s in roster_r["suppliers"]
-            if s["award_count"] >= min_awards
-        ]
+        preferred = [s for s in roster_r["suppliers"] if s["award_count"] >= min_awards]
 
-        evidence = [
-            _ev(uid, "prefers_supplier", s["uid"], entity.name, s["name"])
-            for s in preferred[:20]
-        ]
+        evidence = [_ev(uid, "prefers_supplier", s["uid"], entity.name, s["name"]) for s in preferred[:20]]
 
         return {
             "uid": uid,
@@ -388,33 +389,33 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
-        total   = max(len(tenders), 1)
+        total = max(len(tenders), 1)
 
-        win_counts: dict[str, int]  = defaultdict(int)
-        win_names:  dict[str, str]  = {}
-        evidence: list[dict]        = []
+        win_counts: dict[str, int] = defaultdict(int)
+        win_names: dict[str, str] = {}
+        evidence: list[dict] = []
 
         for t in tenders:
             w = _tender_winner(self._repo, t["uid"])
             if w:
                 win_counts[w["uid"]] += 1
-                win_names[w["uid"]]  = w["name"]
-                evidence.append(
-                    _ev(uid, "awarded_to_supplier", w["uid"], entity.name, w["name"])
-                )
+                win_names[w["uid"]] = w["name"]
+                evidence.append(_ev(uid, "awarded_to_supplier", w["uid"], entity.name, w["name"]))
 
         loyalty_list = []
         for s_uid, count in win_counts.items():
             loyalty_index = round(count / total, 4)
-            loyalty_list.append({
-                "uid":           s_uid,
-                "name":          win_names[s_uid],
-                "award_count":   count,
-                "loyalty_index": loyalty_index,
-                "confidence":    _confidence(count),
-            })
+            loyalty_list.append(
+                {
+                    "uid": s_uid,
+                    "name": win_names[s_uid],
+                    "award_count": count,
+                    "loyalty_index": loyalty_index,
+                    "confidence": _confidence(count),
+                }
+            )
 
         loyalty_list.sort(key=lambda x: x["loyalty_index"], reverse=True)
 
@@ -429,8 +430,7 @@ class BuyerIntelligenceEngine:
             "unique_suppliers_awarded": len(win_counts),
             "overall_loyalty_score": overall_loyalty,
             "loyalty_interpretation": (
-                "high" if overall_loyalty >= 0.5 else
-                "medium" if overall_loyalty >= 0.25 else "low"
+                "high" if overall_loyalty >= 0.5 else "medium" if overall_loyalty >= 0.25 else "low"
             ),
             "supplier_loyalty": loyalty_list[:limit],
             "evidence": evidence[:20],
@@ -452,23 +452,21 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
         win_counts: dict[str, int] = defaultdict(int)
-        win_names:  dict[str, str] = {}
-        evidence: list[dict]       = []
+        win_names: dict[str, str] = {}
+        evidence: list[dict] = []
 
         for t in tenders:
             w = _tender_winner(self._repo, t["uid"])
             if w:
                 win_counts[w["uid"]] += 1
-                win_names[w["uid"]]  = w["name"]
-                evidence.append(
-                    _ev(uid, "awarded", w["uid"], entity.name, w["name"])
-                )
+                win_names[w["uid"]] = w["name"]
+                evidence.append(_ev(uid, "awarded", w["uid"], entity.name, w["name"]))
 
-        hhi       = _hhi(list(win_counts.values()))
+        hhi = _hhi(list(win_counts.values()))
         diversity = round(1.0 - hhi, 4)
 
         return {
@@ -479,9 +477,13 @@ class BuyerIntelligenceEngine:
             "award_hhi": hhi,
             "diversity_score": diversity,
             "diversity_level": (
-                "high"   if diversity >= 0.75 else
-                "medium" if diversity >= 0.50 else
-                "low"    if diversity >= 0.25 else "very_low"
+                "high"
+                if diversity >= 0.75
+                else "medium"
+                if diversity >= 0.50
+                else "low"
+                if diversity >= 0.25
+                else "very_low"
             ),
             "evidence": evidence[:20],
             "confidence": _confidence(len(tenders)),
@@ -502,21 +504,20 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
-        years:   list[int]   = []
-        months:  list[int]   = []
-        values:  list[float] = []
+        years: list[int] = []
+        months: list[int] = []
+        values: list[float] = []
         bidder_counts: list[int] = []
-        evidence: list[dict]     = []
+        evidence: list[dict] = []
 
         for t in tenders:
             attrs = t["attributes"]
-            yr    = _parse_year(attrs.get("valid_from") or attrs.get("date"))
-            mo    = _parse_month(attrs.get("valid_from") or attrs.get("date"))
-            val   = _safe_float(attrs.get("value") or attrs.get("contract_value")
-                                or attrs.get("estimated_value"))
+            yr = _parse_year(attrs.get("valid_from") or attrs.get("date"))
+            mo = _parse_month(attrs.get("valid_from") or attrs.get("date"))
+            val = _safe_float(attrs.get("value") or attrs.get("contract_value") or attrs.get("estimated_value"))
             parts = _tender_participants(self._repo, t["uid"])
 
             if yr:
@@ -542,7 +543,7 @@ class BuyerIntelligenceEngine:
             year_freq[y] += 1
         busiest_year = max(year_freq, key=lambda k: year_freq[k]) if year_freq else None
 
-        avg_value   = round(sum(values) / len(values), 2) if values else None
+        avg_value = round(sum(values) / len(values), 2) if values else None
         avg_bidders = round(sum(bidder_counts) / total, 2) if total else 0.0
 
         # Cadence: avg months between tenders (using years with data)
@@ -583,38 +584,40 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
         month_counts: dict[int, int] = defaultdict(int)
-        evidence: list[dict]         = []
+        evidence: list[dict] = []
 
         for t in tenders:
             attrs = t["attributes"]
-            mo    = _parse_month(attrs.get("valid_from") or attrs.get("date"))
+            mo = _parse_month(attrs.get("valid_from") or attrs.get("date"))
             if mo:
                 month_counts[mo] += 1
             evidence.append(_ev(uid, "issued", t["uid"], entity.name, t["name"]))
 
         total_dated = sum(month_counts.values())
-        uniform     = total_dated / 12 if total_dated else 0
+        uniform = total_dated / 12 if total_dated else 0
 
         monthly = []
         for m in range(1, 13):
             count = month_counts.get(m, 0)
             share = round(count / total_dated, 4) if total_dated else 0.0
-            idx   = round((count - uniform) / uniform, 4) if uniform else 0.0
-            monthly.append({
-                "month": m,
-                "month_name": _MONTH_NAMES[m],
-                "count": count,
-                "share": share,
-                "seasonality_index": idx,
-            })
+            idx = round((count - uniform) / uniform, 4) if uniform else 0.0
+            monthly.append(
+                {
+                    "month": m,
+                    "month_name": _MONTH_NAMES[m],
+                    "count": count,
+                    "share": share,
+                    "seasonality_index": idx,
+                }
+            )
 
         # Quarter rollup
         quarters = {}
-        for q, ms in {1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12]}.items():
+        for q, ms in {1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]}.items():
             q_count = sum(month_counts.get(m, 0) for m in ms)
             quarters[f"Q{q}"] = {
                 "quarter": q,
@@ -650,41 +653,37 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
-        industry_counts: dict[str, int]  = defaultdict(int)
-        industry_names:  dict[str, str]  = {}
-        evidence: list[dict]             = []
+        industry_counts: dict[str, int] = defaultdict(int)
+        industry_names: dict[str, str] = {}
+        evidence: list[dict] = []
 
         for t in tenders:
             participants = _tender_participants(self._repo, t["uid"])
             for p in participants:
                 # each participant → IN_INDUSTRY → industry nodes
                 for rel, ind_ent in self._repo.get_neighbors(
-                    p["uid"], direction="out",
-                    kinds=[BizRelationKind.IN_INDUSTRY], limit=10
+                    p["uid"], direction="out", kinds=[BizRelationKind.IN_INDUSTRY], limit=10
                 ):
                     if ind_ent.kind == BizEntityKind.INDUSTRY:
                         industry_counts[ind_ent.uid] += 1
-                        industry_names[ind_ent.uid]   = ind_ent.name
-                        evidence.append(
-                            _ev(p["uid"], "in_industry", ind_ent.uid,
-                                p["name"], ind_ent.name)
-                        )
+                        industry_names[ind_ent.uid] = ind_ent.name
+                        evidence.append(_ev(p["uid"], "in_industry", ind_ent.uid, p["name"], ind_ent.name))
 
         total = sum(industry_counts.values())
         industries = []
-        for ind_uid, count in sorted(
-            industry_counts.items(), key=lambda x: x[1], reverse=True
-        ):
-            industries.append({
-                "uid":   ind_uid,
-                "name":  industry_names[ind_uid],
-                "count": count,
-                "share": round(count / total, 4) if total else 0.0,
-                "confidence": _confidence(count),
-            })
+        for ind_uid, count in sorted(industry_counts.items(), key=lambda x: x[1], reverse=True):
+            industries.append(
+                {
+                    "uid": ind_uid,
+                    "name": industry_names[ind_uid],
+                    "count": count,
+                    "share": round(count / total, 4) if total else 0.0,
+                    "confidence": _confidence(count),
+                }
+            )
 
         return {
             "uid": uid,
@@ -708,27 +707,24 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
         _BUCKETS = [
-            ("micro",  0,        10_000),
-            ("small",  10_000,   100_000),
-            ("medium", 100_000,  1_000_000),
-            ("large",  1_000_000, 10_000_000),
-            ("mega",   10_000_000, float("inf")),
+            ("micro", 0, 10_000),
+            ("small", 10_000, 100_000),
+            ("medium", 100_000, 1_000_000),
+            ("large", 1_000_000, 10_000_000),
+            ("mega", 10_000_000, float("inf")),
         ]
 
         bucket_counts: dict[str, int] = {b[0]: 0 for b in _BUCKETS}
-        values: list[float]           = []
-        evidence: list[dict]          = []
+        values: list[float] = []
+        evidence: list[dict] = []
 
         for t in tenders:
             attrs = t["attributes"]
-            val = _safe_float(
-                attrs.get("value") or attrs.get("contract_value")
-                or attrs.get("estimated_value")
-            )
+            val = _safe_float(attrs.get("value") or attrs.get("contract_value") or attrs.get("estimated_value"))
             if val is None:
                 continue
             values.append(val)
@@ -742,13 +738,15 @@ class BuyerIntelligenceEngine:
         buckets = []
         for name, lo, hi in _BUCKETS:
             count = bucket_counts[name]
-            buckets.append({
-                "bucket": name,
-                "min_value": lo,
-                "max_value": hi if hi != float("inf") else None,
-                "count": count,
-                "share": round(count / total_with_value, 4) if total_with_value else 0.0,
-            })
+            buckets.append(
+                {
+                    "bucket": name,
+                    "min_value": lo,
+                    "max_value": hi if hi != float("inf") else None,
+                    "count": count,
+                    "share": round(count / total_with_value, 4) if total_with_value else 0.0,
+                }
+            )
 
         preferred = max(buckets, key=lambda x: x["count"]) if buckets else None
 
@@ -777,7 +775,7 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
         values: list[float] = []
@@ -785,26 +783,27 @@ class BuyerIntelligenceEngine:
 
         for t in tenders:
             attrs = t["attributes"]
-            val   = _safe_float(
-                attrs.get("value") or attrs.get("contract_value")
-                or attrs.get("estimated_value")
-            )
+            val = _safe_float(attrs.get("value") or attrs.get("contract_value") or attrs.get("estimated_value"))
             if val is not None:
                 values.append(val)
-                evidence.append(
-                    _ev(uid, "issued_tender_value", t["uid"], entity.name, t["name"])
-                )
+                evidence.append(_ev(uid, "issued_tender_value", t["uid"], entity.name, t["name"]))
 
         if not values:
             return {
-                "uid": uid, "name": entity.name,
-                "tenders_with_value": 0, "avg_value": None,
-                "median_value": None, "min_value": None, "max_value": None,
-                "total_value": None, "evidence": [], "confidence": 0.3,
+                "uid": uid,
+                "name": entity.name,
+                "tenders_with_value": 0,
+                "avg_value": None,
+                "median_value": None,
+                "min_value": None,
+                "max_value": None,
+                "total_value": None,
+                "evidence": [],
+                "confidence": 0.3,
             }
 
         values.sort()
-        n      = len(values)
+        n = len(values)
         median = values[n // 2] if n % 2 else (values[n // 2 - 1] + values[n // 2]) / 2
 
         return {
@@ -831,7 +830,7 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
         counts: list[int] = []
@@ -844,13 +843,18 @@ class BuyerIntelligenceEngine:
 
         if not counts:
             return {
-                "uid": uid, "name": entity.name,
-                "total_tenders": 0, "avg_bidder_count": 0.0,
-                "min_bidder_count": 0, "max_bidder_count": 0,
-                "single_bidder_tenders": 0, "evidence": [], "confidence": 0.3,
+                "uid": uid,
+                "name": entity.name,
+                "total_tenders": 0,
+                "avg_bidder_count": 0.0,
+                "min_bidder_count": 0,
+                "max_bidder_count": 0,
+                "single_bidder_tenders": 0,
+                "evidence": [],
+                "confidence": 0.3,
             }
 
-        avg    = round(sum(counts) / len(counts), 2)
+        avg = round(sum(counts) / len(counts), 2)
         single = sum(1 for c in counts if c <= 1)
 
         return {
@@ -878,30 +882,35 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
-        win_counts: dict[str, int]  = defaultdict(int)
-        win_names:  dict[str, str]  = {}
-        evidence: list[dict]        = []
+        win_counts: dict[str, int] = defaultdict(int)
+        win_names: dict[str, str] = {}
+        evidence: list[dict] = []
 
         for t in tenders:
             w = _tender_winner(self._repo, t["uid"])
             if w:
                 win_counts[w["uid"]] += 1
-                win_names[w["uid"]]   = w["name"]
-                evidence.append(
-                    _ev(uid, "awarded_to", w["uid"], entity.name, w["name"])
-                )
+                win_names[w["uid"]] = w["name"]
+                evidence.append(_ev(uid, "awarded_to", w["uid"], entity.name, w["name"]))
 
         hhi = _hhi(list(win_counts.values()))
         total_awards = sum(win_counts.values())
 
         top_suppliers = sorted(
-            [{"uid": k, "name": win_names[k], "awards": v,
-              "share": round(v / total_awards, 4) if total_awards else 0.0}
-             for k, v in win_counts.items()],
-            key=lambda x: x["awards"], reverse=True,
+            [
+                {
+                    "uid": k,
+                    "name": win_names[k],
+                    "awards": v,
+                    "share": round(v / total_awards, 4) if total_awards else 0.0,
+                }
+                for k, v in win_counts.items()
+            ],
+            key=lambda x: x["awards"],
+            reverse=True,
         )[:10]
 
         return {
@@ -911,8 +920,7 @@ class BuyerIntelligenceEngine:
             "unique_suppliers": len(win_counts),
             "hhi": hhi,
             "concentration_level": (
-                "highly_concentrated"    if hhi >= 0.25 else
-                "moderately_concentrated" if hhi >= 0.15 else "competitive"
+                "highly_concentrated" if hhi >= 0.25 else "moderately_concentrated" if hhi >= 0.15 else "competitive"
             ),
             "top_suppliers": top_suppliers,
             "evidence": evidence[:20],
@@ -938,33 +946,33 @@ class BuyerIntelligenceEngine:
         entity = self._repo.get(uid)
 
         # Sub-components
-        bidder_r    = self.avg_bidder_count(uid)
+        bidder_r = self.avg_bidder_count(uid)
         diversity_r = self.supplier_diversity(uid)
 
-        avg_bidders        = bidder_r.get("avg_bidder_count", 0) or 0
+        avg_bidders = bidder_r.get("avg_bidder_count", 0) or 0
         single_bidder_rate = bidder_r.get("single_bidder_rate", 0) or 0
-        diversity_score    = diversity_r.get("diversity_score", 0) or 0
+        diversity_score = diversity_r.get("diversity_score", 0) or 0
 
         avg_bidder_score = min(1.0, avg_bidders / 5.0)
         score = round(
-            0.40 * avg_bidder_score
-            + 0.30 * diversity_score
-            + 0.30 * (1.0 - single_bidder_rate),
+            0.40 * avg_bidder_score + 0.30 * diversity_score + 0.30 * (1.0 - single_bidder_rate),
             4,
         )
 
         level = (
-            "highly_competitive"   if score >= 0.65 else
-            "moderately_competitive" if score >= 0.40 else "low_competition"
+            "highly_competitive" if score >= 0.65 else "moderately_competitive" if score >= 0.40 else "low_competition"
         )
 
         evidence = [
-            _ev(uid, "competitiveness_component", uid, entity.name,
-                f"avg_bidders={avg_bidders}"),
-            _ev(uid, "competitiveness_component", uid, entity.name,
-                f"diversity={diversity_score}"),
-            _ev(uid, "competitiveness_component", uid, entity.name,
-                f"single_bidder_rate={single_bidder_rate}"),
+            _ev(uid, "competitiveness_component", uid, entity.name, f"avg_bidders={avg_bidders}"),
+            _ev(uid, "competitiveness_component", uid, entity.name, f"diversity={diversity_score}"),
+            _ev(
+                uid,
+                "competitiveness_component",
+                uid,
+                entity.name,
+                f"single_bidder_rate={single_bidder_rate}",
+            ),
         ]
 
         return {
@@ -973,9 +981,9 @@ class BuyerIntelligenceEngine:
             "competitiveness_score": score,
             "competitiveness_level": level,
             "components": {
-                "avg_bidder_score":    round(avg_bidder_score, 4),
-                "diversity_score":     round(diversity_score, 4),
-                "open_tender_score":   round(1.0 - single_bidder_rate, 4),
+                "avg_bidder_score": round(avg_bidder_score, 4),
+                "diversity_score": round(diversity_score, 4),
+                "open_tender_score": round(1.0 - single_bidder_rate, 4),
             },
             "evidence": evidence,
             "confidence": _confidence(bidder_r.get("total_tenders", 0)),
@@ -992,16 +1000,16 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
         # Bucket tenders by year
         by_year: dict[int, list[dict]] = defaultdict(list)
-        undated: list[dict]            = []
+        undated: list[dict] = []
 
         for t in tenders:
             attrs = t["attributes"]
-            yr    = _parse_year(attrs.get("valid_from") or attrs.get("date"))
+            yr = _parse_year(attrs.get("valid_from") or attrs.get("date"))
             if yr:
                 by_year[yr].append(t)
             else:
@@ -1009,21 +1017,18 @@ class BuyerIntelligenceEngine:
 
         timeline = []
         for yr in sorted(by_year):
-            yr_tenders   = by_year[yr]
+            yr_tenders = by_year[yr]
             yr_suppliers: set[str] = set()
-            yr_winners:   dict[str, int] = defaultdict(int)
+            yr_winners: dict[str, int] = defaultdict(int)
             yr_winner_names: dict[str, str] = {}
-            yr_value      = 0.0
-            yr_value_count= 0
+            yr_value = 0.0
+            yr_value_count = 0
 
             for t in yr_tenders:
                 attrs = t["attributes"]
-                val   = _safe_float(
-                    attrs.get("value") or attrs.get("contract_value")
-                    or attrs.get("estimated_value")
-                )
+                val = _safe_float(attrs.get("value") or attrs.get("contract_value") or attrs.get("estimated_value"))
                 if val is not None:
-                    yr_value       += val
+                    yr_value += val
                     yr_value_count += 1
 
                 parts = _tender_participants(self._repo, t["uid"])
@@ -1037,25 +1042,27 @@ class BuyerIntelligenceEngine:
             if yr_winners:
                 tw_uid = max(yr_winners, key=lambda k: yr_winners[k])
                 top_winner = {
-                    "uid": tw_uid, "name": yr_winner_names[tw_uid],
+                    "uid": tw_uid,
+                    "name": yr_winner_names[tw_uid],
                     "award_count": yr_winners[tw_uid],
                 }
 
-            timeline.append({
-                "year":               yr,
-                "tender_count":       len(yr_tenders),
-                "unique_suppliers":   len(yr_suppliers),
-                "unique_winners":     len(yr_winners),
-                "total_value":        round(yr_value, 2) if yr_value_count else None,
-                "avg_value":          round(yr_value / yr_value_count, 2)
-                                      if yr_value_count else None,
-                "top_winner":         top_winner,
-            })
+            timeline.append(
+                {
+                    "year": yr,
+                    "tender_count": len(yr_tenders),
+                    "unique_suppliers": len(yr_suppliers),
+                    "unique_winners": len(yr_winners),
+                    "total_value": round(yr_value, 2) if yr_value_count else None,
+                    "avg_value": round(yr_value / yr_value_count, 2) if yr_value_count else None,
+                    "top_winner": top_winner,
+                }
+            )
 
         # Trend: compare last 2 years
         trend = "insufficient_data"
         if len(timeline) >= 2:
-            last  = timeline[-1]["tender_count"]
+            last = timeline[-1]["tender_count"]
             prior = timeline[-2]["tender_count"]
             if last > prior * 1.2:
                 trend = "growing"
@@ -1091,16 +1098,16 @@ class BuyerIntelligenceEngine:
         if err:
             return err
 
-        entity  = self._repo.get(uid)
+        entity = self._repo.get(uid)
         tenders = _buyer_tenders(self._repo, uid)
 
         # Collect dated tenders
         dated: list[tuple[int, int]] = []  # (year, month)
         for t in tenders:
             attrs = t["attributes"]
-            ds    = attrs.get("valid_from") or attrs.get("date")
-            yr    = _parse_year(ds)
-            mo    = _parse_month(ds)
+            ds = attrs.get("valid_from") or attrs.get("date")
+            yr = _parse_year(ds)
+            mo = _parse_month(ds)
             if yr and mo:
                 dated.append((yr, mo))
 
@@ -1133,8 +1140,8 @@ class BuyerIntelligenceEngine:
         if len(dated) >= 2:
             gaps = []
             for i in range(1, len(dated)):
-                prev_ym = dated[i-1][0] * 12 + dated[i-1][1]
-                curr_ym = dated[i][0]   * 12 + dated[i][1]
+                prev_ym = dated[i - 1][0] * 12 + dated[i - 1][1]
+                curr_ym = dated[i][0] * 12 + dated[i][1]
                 gap = curr_ym - prev_ym
                 if gap > 0:
                     gaps.append(gap)
@@ -1151,17 +1158,14 @@ class BuyerIntelligenceEngine:
         # Estimated next: last + cadence
         next_yr = next_mo = None
         if cadence:
-            est_ym     = last_yr * 12 + last_mo + round(cadence)
-            next_yr    = est_ym // 12
-            next_mo    = est_ym % 12 or 12
+            est_ym = last_yr * 12 + last_mo + round(cadence)
+            next_yr = est_ym // 12
+            next_mo = est_ym % 12 or 12
             if next_mo == 0:
                 next_yr -= 1
-                next_mo  = 12
+                next_mo = 12
 
-        evidence = [
-            _ev(uid, "issued", t["uid"], entity.name, t["name"])
-            for t in tenders[:10]
-        ]
+        evidence = [_ev(uid, "issued", t["uid"], entity.name, t["name"]) for t in tenders[:10]]
 
         return {
             "uid": uid,

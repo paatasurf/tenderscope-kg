@@ -32,16 +32,15 @@ Public API
   competitor_rankings(scope_uid, by) → ranked company list with scores
   competitive_pressure(uid)          → composite pressure score with evidence
 """
+
 from __future__ import annotations
 
-import math
 import re
 from collections import defaultdict
 from typing import Any, Optional
 
 from .domain import BizEntityKind, BizRelationKind
 from .repository._base import BizRepository
-
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -56,12 +55,13 @@ _BID_KINDS = [
 _BUYER_KINDS = [BizRelationKind.ISSUED_BY]
 
 # Location relation kinds
-_CITY_KINDS     = [BizRelationKind.IN_CITY]
+_CITY_KINDS = [BizRelationKind.IN_CITY]
 _PROVINCE_KINDS = [BizRelationKind.IN_PROVINCE]
 _INDUSTRY_KINDS = [BizRelationKind.IN_INDUSTRY]
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
 
 def _parse_value(raw: Any) -> Optional[float]:
     """Parse 'CAD 273,936.60' or 500000.0 → float, else None."""
@@ -93,30 +93,34 @@ def _buyer_award_stats(
       company_wins      dict[company_uid, int]
       company_values    dict[company_uid, float]
     """
-    company_wins:   dict[str, int]   = defaultdict(int)
+    company_wins: dict[str, int] = defaultdict(int)
     company_values: dict[str, float] = defaultdict(float)
-    total_wins   = 0
-    total_value  = 0.0
+    total_wins = 0
+    total_value = 0.0
     valued_edges = 0
 
     for _rel, t_ent in repo.get_neighbors(
-        buyer_uid, direction="in",
-        kinds=[BizRelationKind.ISSUED_BY], limit=5000,
+        buyer_uid,
+        direction="in",
+        kinds=[BizRelationKind.ISSUED_BY],
+        limit=5000,
     ):
         if t_ent.kind != BizEntityKind.TENDER:
             continue
         for award_rel, c_ent in repo.get_neighbors(
-            t_ent.uid, direction="in",
-            kinds=[BizRelationKind.AWARDED_TO], limit=50,
+            t_ent.uid,
+            direction="in",
+            kinds=[BizRelationKind.AWARDED_TO],
+            limit=50,
         ):
             if c_ent.kind != BizEntityKind.COMPANY:
                 continue
             total_wins += 1
             company_wins[c_ent.uid] += 1
             v = _parse_value(
-                award_rel.attributes.get("contract_value") or
-                t_ent.attributes.get("contract_value") or
-                t_ent.attributes.get("estimated_value")
+                award_rel.attributes.get("contract_value")
+                or t_ent.attributes.get("contract_value")
+                or t_ent.attributes.get("estimated_value")
             )
             if v is not None:
                 valued_edges += 1
@@ -126,10 +130,10 @@ def _buyer_award_stats(
     value_coverage = round(valued_edges / total_wins, 4) if total_wins else 0.0
 
     return {
-        "total_wins":     total_wins,
-        "total_value":    total_value,
+        "total_wins": total_wins,
+        "total_value": total_value,
         "value_coverage": value_coverage,
-        "company_wins":   dict(company_wins),
+        "company_wins": dict(company_wins),
         "company_values": dict(company_values),
     }
 
@@ -169,89 +173,90 @@ def _bawd_score(
         total_tw = len(won_tenders)
         if total_tw == 0:
             return {
-                "score":          0.0,
-                "buyer_count":    0,
-                "total_wins":     0,
+                "score": 0.0,
+                "buyer_count": 0,
+                "total_wins": 0,
                 "value_coverage": 0.0,
-                "per_buyer":      [],
+                "per_buyer": [],
             }
         all_winners: set[str] = {company_uid}
         for t_uid, _ in won_tenders:
             for c_uid, _, _ in _tender_companies(repo, t_uid):
                 all_winners.add(c_uid)
-        scope_size  = len(all_winners)
-        freq_share  = 1.0 / scope_size if scope_size else 1.0
-        dominance   = round(freq_share, 4)
+        scope_size = len(all_winners)
+        freq_share = 1.0 / scope_size if scope_size else 1.0
+        dominance = round(freq_share, 4)
         return {
-            "score":          dominance,
-            "buyer_count":    0,
-            "total_wins":     total_tw,
+            "score": dominance,
+            "buyer_count": 0,
+            "total_wins": total_tw,
             "value_coverage": 0.0,
-            "per_buyer":      [],
+            "per_buyer": [],
         }
 
-    weighted_sum  = 0.0
-    weight_total  = 0.0
+    weighted_sum = 0.0
+    weight_total = 0.0
     total_value_coverage_num = 0.0
     total_wins_all = 0
     per_buyer: list[dict] = []
 
     for b_uid in buyer_uids:
         stats = _buyer_award_stats(repo, b_uid)
-        tw    = stats["total_wins"]
-        tv    = stats["total_value"]
+        tw = stats["total_wins"]
+        tv = stats["total_value"]
         alpha = stats["value_coverage"]
 
         if tw == 0:
             continue
 
-        c_wins  = stats["company_wins"].get(company_uid, 0)
+        c_wins = stats["company_wins"].get(company_uid, 0)
         c_value = stats["company_values"].get(company_uid, 0.0)
 
         freq_share = c_wins / tw
-        val_share  = (c_value / tv) if tv > 0 else 0.0
-        dominance  = alpha * val_share + (1.0 - alpha) * freq_share
+        val_share = (c_value / tv) if tv > 0 else 0.0
+        dominance = alpha * val_share + (1.0 - alpha) * freq_share
 
-        weighted_sum  += dominance * tw
-        weight_total  += tw
+        weighted_sum += dominance * tw
+        weight_total += tw
         total_wins_all += c_wins
         total_value_coverage_num += alpha * tw
 
         b_ent = repo.get(b_uid)
-        per_buyer.append({
-            "buyer_uid":    b_uid,
-            "buyer_name":   b_ent.name if b_ent else b_uid,
-            "company_wins": c_wins,
-            "total_wins":   tw,
-            "freq_share":   round(freq_share, 4),
-            "val_share":    round(val_share, 4),
-            "alpha":        round(alpha, 4),
-            "dominance":    round(dominance, 4),
-        })
+        per_buyer.append(
+            {
+                "buyer_uid": b_uid,
+                "buyer_name": b_ent.name if b_ent else b_uid,
+                "company_wins": c_wins,
+                "total_wins": tw,
+                "freq_share": round(freq_share, 4),
+                "val_share": round(val_share, 4),
+                "alpha": round(alpha, 4),
+                "dominance": round(dominance, 4),
+            }
+        )
 
     if weight_total == 0:
         return {
-            "score":          0.0,
-            "buyer_count":    len(buyer_uids),
-            "total_wins":     total_wins_all,
+            "score": 0.0,
+            "buyer_count": len(buyer_uids),
+            "total_wins": total_wins_all,
             "value_coverage": 0.0,
-            "per_buyer":      per_buyer,
+            "per_buyer": per_buyer,
         }
 
     score = round(weighted_sum / weight_total, 4)
     overall_coverage = round(total_value_coverage_num / weight_total, 4)
 
     return {
-        "score":          score,
-        "buyer_count":    len(per_buyer),
-        "total_wins":     total_wins_all,
+        "score": score,
+        "buyer_count": len(per_buyer),
+        "total_wins": total_wins_all,
         "value_coverage": overall_coverage,
-        "per_buyer":      per_buyer,
+        "per_buyer": per_buyer,
     }
 
 
-def _ev(entity_uid: str, rel_kind: str, target_uid: str,
-        entity_name: str = "", target_name: str = "") -> dict:
+def _ev(entity_uid: str, rel_kind: str, target_uid: str, entity_name: str = "", target_name: str = "") -> dict:
     """Build a single evidence triple."""
     return {
         "entity_uid": entity_uid,
@@ -262,8 +267,7 @@ def _ev(entity_uid: str, rel_kind: str, target_uid: str,
     }
 
 
-def _confidence(evidence_count: int, base: float = 0.3,
-                scale: float = 0.07, cap_at: int = 10) -> float:
+def _confidence(evidence_count: int, base: float = 0.3, scale: float = 0.07, cap_at: int = 10) -> float:
     """Confidence grows with evidence volume, same formula as CIE."""
     return round(min(1.0, base + scale * min(cap_at, evidence_count)), 4)
 
@@ -288,29 +292,26 @@ def _hhi(counts: list[float]) -> float:
 
 # ── Public: get tender set for a company ─────────────────────────────────────
 
-def _company_tenders(repo: BizRepository, uid: str
-                     ) -> list[tuple[str, str, str]]:
+
+def _company_tenders(repo: BizRepository, uid: str) -> list[tuple[str, str, str]]:
     """
     Return (tender_uid, tender_name, relation_kind_str) for all tenders
     the company has bid on, participated in, or been awarded.
     """
     results = []
-    for rel, ent in repo.get_neighbors(uid, direction="out", kinds=_BID_KINDS,
-                                        limit=2000):
+    for rel, ent in repo.get_neighbors(uid, direction="out", kinds=_BID_KINDS, limit=2000):
         if ent.kind == BizEntityKind.TENDER:
             results.append((ent.uid, ent.name, rel.kind.value))
     return results
 
 
-def _tender_companies(repo: BizRepository, tender_uid: str
-                      ) -> list[tuple[str, str, str]]:
+def _tender_companies(repo: BizRepository, tender_uid: str) -> list[tuple[str, str, str]]:
     """
     Return (company_uid, company_name, relation_kind_str) for all companies
     connected to a tender (from their side — outgoing bid/awarded edges).
     """
     results = []
-    for rel, ent in repo.get_neighbors(tender_uid, direction="in",
-                                        kinds=_BID_KINDS, limit=500):
+    for rel, ent in repo.get_neighbors(tender_uid, direction="in", kinds=_BID_KINDS, limit=500):
         if ent.kind == BizEntityKind.COMPANY:
             results.append((ent.uid, ent.name, rel.kind.value))
     return results
@@ -318,26 +319,21 @@ def _tender_companies(repo: BizRepository, tender_uid: str
 
 def _tender_winner(repo: BizRepository, tender_uid: str) -> Optional[tuple[str, str]]:
     """Return (winner_uid, winner_name) for a tender, or None."""
-    for rel, ent in repo.get_neighbors(tender_uid, direction="in",
-                                        kinds=[BizRelationKind.AWARDED_TO],
-                                        limit=5):
+    for rel, ent in repo.get_neighbors(tender_uid, direction="in", kinds=[BizRelationKind.AWARDED_TO], limit=5):
         if ent.kind == BizEntityKind.COMPANY:
             return (ent.uid, ent.name)
     return None
 
 
-def _tender_buyer(repo: BizRepository, tender_uid: str
-                  ) -> Optional[tuple[str, str]]:
+def _tender_buyer(repo: BizRepository, tender_uid: str) -> Optional[tuple[str, str]]:
     """Return (buyer_uid, buyer_name) via tender→issued_by→org."""
-    for rel, ent in repo.get_neighbors(tender_uid, direction="out",
-                                        kinds=_BUYER_KINDS, limit=5):
+    for rel, ent in repo.get_neighbors(tender_uid, direction="out", kinds=_BUYER_KINDS, limit=5):
         if ent.kind in (BizEntityKind.ORGANIZATION, BizEntityKind.COMPANY):
             return (ent.uid, ent.name)
     return None
 
 
-def _require_entity(repo: BizRepository, uid: str,
-                    allowed_kinds: Optional[list[BizEntityKind]] = None) -> dict | None:
+def _require_entity(repo: BizRepository, uid: str, allowed_kinds: Optional[list[BizEntityKind]] = None) -> dict | None:
     """Return error dict if uid not found / wrong kind, else None."""
     entity = repo.get(uid)
     if not entity:
@@ -351,6 +347,7 @@ def _require_entity(repo: BizRepository, uid: str,
 # ═════════════════════════════════════════════════════════════════════════════
 # Engine
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 class CompetitiveIntelligenceEngine:
     """
@@ -378,12 +375,12 @@ class CompetitiveIntelligenceEngine:
         return {
             "uid": uid,
             "name": entity.name,
-            "win_rate":             self.win_rate(uid),
-            "growth_trend":         self.growth_trend(uid),
-            "direct_competitors":   self.direct_competitors(uid),
+            "win_rate": self.win_rate(uid),
+            "growth_trend": self.growth_trend(uid),
+            "direct_competitors": self.direct_competitors(uid),
             "emerging_competitors": self.emerging_competitors(uid),
-            "co_bidders":           self.co_bidders(uid),
-            "common_losers":        self.common_losers(uid),
+            "co_bidders": self.co_bidders(uid),
+            "common_losers": self.common_losers(uid),
             "competitive_pressure": self.competitive_pressure(uid),
         }
 
@@ -421,8 +418,10 @@ class CompetitiveIntelligenceEngine:
             b_uid, b_name = buyer
             # other companies that won from this buyer
             for rel2, ent2 in self._repo.get_neighbors(
-                b_uid, direction="in",
-                kinds=[BizRelationKind.ISSUED_BY], limit=500,
+                b_uid,
+                direction="in",
+                kinds=[BizRelationKind.ISSUED_BY],
+                limit=500,
             ):
                 if ent2.kind != BizEntityKind.TENDER:
                     continue
@@ -440,18 +439,19 @@ class CompetitiveIntelligenceEngine:
             shared_t = len(co_tenders.get(c_uid, set()))
             shared_b = len(co_buyers.get(c_uid, set()))
             score = shared_t * 1.0 + shared_b * 0.5
-            competitors.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "shared_tenders": shared_t,
-                "shared_buyers": shared_b,
-                "competition_score": round(score, 2),
-                "confidence": _confidence(shared_t + shared_b),
-                "evidence": [
-                    _ev(uid, "co_appeared_on_tender", t, entity.name)
-                    for t in co_tenders.get(c_uid, set())
-                ][:5],
-            })
+            competitors.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "shared_tenders": shared_t,
+                    "shared_buyers": shared_b,
+                    "competition_score": round(score, 2),
+                    "confidence": _confidence(shared_t + shared_b),
+                    "evidence": [
+                        _ev(uid, "co_appeared_on_tender", t, entity.name) for t in co_tenders.get(c_uid, set())
+                    ][:5],
+                }
+            )
 
         competitors.sort(key=lambda x: x["competition_score"], reverse=True)
         return {
@@ -464,8 +464,7 @@ class CompetitiveIntelligenceEngine:
 
     # ── Emerging competitors ──────────────────────────────────────────────────
 
-    def emerging_competitors(self, uid: str, lookback_years: int = 2,
-                              limit: int = 30) -> dict:
+    def emerging_competitors(self, uid: str, lookback_years: int = 2, limit: int = 30) -> dict:
         """
         Companies that have recently started appearing on the same markets
         (buyers or industries) with growing bid frequency.
@@ -484,44 +483,43 @@ class CompetitiveIntelligenceEngine:
         candidates: dict[str, list[tuple[str, Optional[int]]]] = defaultdict(list)
         for t_uid, t_name, _ in tenders:
             t_ent = self._repo.get(t_uid)
-            year = _parse_year(t_ent.attributes.get("valid_from") or
-                               t_ent.attributes.get("date") if t_ent else None)
+            year = _parse_year(t_ent.attributes.get("valid_from") or t_ent.attributes.get("date") if t_ent else None)
             for c_uid, c_name, _ in _tender_companies(self._repo, t_uid):
                 if c_uid == uid:
                     continue
                 candidates[c_uid].append((t_uid, year))
 
         import datetime
+
         current_year = datetime.date.today().year
         cutoff = current_year - lookback_years
 
         emerging = []
         for c_uid, appearances in candidates.items():
             recent = [a for a in appearances if a[1] and a[1] >= cutoff]
-            older  = [a for a in appearances if a[1] and a[1] < cutoff]
+            older = [a for a in appearances if a[1] and a[1] < cutoff]
             if not recent:
                 continue
             # growth = recent appearances vs older; new entrant if no older history
             is_new_entrant = len(older) == 0
-            growth_ratio = (len(recent) / max(len(older), 1))
+            growth_ratio = len(recent) / max(len(older), 1)
             if not (is_new_entrant or growth_ratio > 1.0):
                 continue
             c_ent = self._repo.get(c_uid)
             if not c_ent:
                 continue
-            emerging.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "recent_appearances": len(recent),
-                "older_appearances": len(older),
-                "is_new_entrant": is_new_entrant,
-                "growth_ratio": round(growth_ratio, 2),
-                "confidence": _confidence(len(recent)),
-                "evidence": [
-                    _ev(uid, "co_tender_recent", t, entity.name)
-                    for t, _ in recent[:5]
-                ],
-            })
+            emerging.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "recent_appearances": len(recent),
+                    "older_appearances": len(older),
+                    "is_new_entrant": is_new_entrant,
+                    "growth_ratio": round(growth_ratio, 2),
+                    "confidence": _confidence(len(recent)),
+                    "evidence": [_ev(uid, "co_tender_recent", t, entity.name) for t, _ in recent[:5]],
+                }
+            )
 
         emerging.sort(key=lambda x: x["growth_ratio"], reverse=True)
         return {
@@ -560,15 +558,15 @@ class CompetitiveIntelligenceEngine:
             c_ent = self._repo.get(c_uid)
             if not c_ent:
                 continue
-            bidders.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "co_bid_count": len(t_list),
-                "confidence": _confidence(len(t_list)),
-                "evidence": [
-                    _ev(uid, "co_bid_on_tender", t, entity.name) for t in t_list[:5]
-                ],
-            })
+            bidders.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "co_bid_count": len(t_list),
+                    "confidence": _confidence(len(t_list)),
+                    "evidence": [_ev(uid, "co_bid_on_tender", t, entity.name) for t in t_list[:5]],
+                }
+            )
 
         bidders.sort(key=lambda x: x["co_bid_count"], reverse=True)
         return {
@@ -611,16 +609,15 @@ class CompetitiveIntelligenceEngine:
             c_ent = self._repo.get(c_uid)
             if not c_ent:
                 continue
-            losers.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "times_lost_to_winner": len(t_list),
-                "confidence": _confidence(len(t_list)),
-                "evidence": [
-                    _ev(c_uid, "lost_tender_to", uid, c_ent.name, entity.name)
-                    for t in t_list[:5]
-                ],
-            })
+            losers.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "times_lost_to_winner": len(t_list),
+                    "confidence": _confidence(len(t_list)),
+                    "evidence": [_ev(c_uid, "lost_tender_to", uid, c_ent.name, entity.name) for t in t_list[:5]],
+                }
+            )
 
         losers.sort(key=lambda x: x["times_lost_to_winner"], reverse=True)
         return {
@@ -646,14 +643,16 @@ class CompetitiveIntelligenceEngine:
         # Tenders issued by this buyer
         issued_tenders: list[tuple[str, str]] = []
         for rel, ent in self._repo.get_neighbors(
-            buyer_uid, direction="in",
-            kinds=[BizRelationKind.ISSUED_BY], limit=2000,
+            buyer_uid,
+            direction="in",
+            kinds=[BizRelationKind.ISSUED_BY],
+            limit=2000,
         ):
             if ent.kind == BizEntityKind.TENDER:
                 issued_tenders.append((ent.uid, ent.name))
 
         award_count: dict[str, list[str]] = defaultdict(list)
-        bid_count:   dict[str, list[str]] = defaultdict(list)
+        bid_count: dict[str, list[str]] = defaultdict(list)
         evidence: list[dict] = []
 
         for t_uid, t_name in issued_tenders:
@@ -671,21 +670,22 @@ class CompetitiveIntelligenceEngine:
             if not c_ent:
                 continue
             awards = len(award_count.get(c_uid, []))
-            bids   = len(bid_count.get(c_uid, []))
-            total  = awards + bids
-            wr     = round(awards / total, 4) if total > 0 else 0.0
-            prefs.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "award_count": awards,
-                "bid_count": bids,
-                "win_rate": wr,
-                "confidence": _confidence(awards),
-                "evidence": [
-                    _ev(buyer_uid, "awarded_contract_to", t, entity.name)
-                    for t in award_count.get(c_uid, [])[:5]
-                ],
-            })
+            bids = len(bid_count.get(c_uid, []))
+            total = awards + bids
+            wr = round(awards / total, 4) if total > 0 else 0.0
+            prefs.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "award_count": awards,
+                    "bid_count": bids,
+                    "win_rate": wr,
+                    "confidence": _confidence(awards),
+                    "evidence": [
+                        _ev(buyer_uid, "awarded_contract_to", t, entity.name) for t in award_count.get(c_uid, [])[:5]
+                    ],
+                }
+            )
 
         prefs.sort(key=lambda x: x["award_count"], reverse=True)
         return {
@@ -740,13 +740,15 @@ class CompetitiveIntelligenceEngine:
             if not c_ent:
                 continue
             share = round(count / total, 4)
-            suppliers.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "win_count": count,
-                "market_share": share,
-                "confidence": _confidence(count),
-            })
+            suppliers.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "win_count": count,
+                    "market_share": share,
+                    "confidence": _confidence(count),
+                }
+            )
 
         return {
             "scope_uid": scope_uid,
@@ -767,8 +769,10 @@ class CompetitiveIntelligenceEngine:
         if entity.kind == BizEntityKind.ORGANIZATION:
             # Buyer scope: tenders issued by this org
             for rel, t_ent in self._repo.get_neighbors(
-                scope_uid, direction="in",
-                kinds=[BizRelationKind.ISSUED_BY], limit=2000,
+                scope_uid,
+                direction="in",
+                kinds=[BizRelationKind.ISSUED_BY],
+                limit=2000,
             ):
                 if t_ent.kind != BizEntityKind.TENDER:
                     continue
@@ -778,10 +782,12 @@ class CompetitiveIntelligenceEngine:
 
         elif entity.kind in (BizEntityKind.CITY, BizEntityKind.PROVINCE):
             # Geographic scope: companies in this location
-            loc_kind = (BizRelationKind.IN_CITY if entity.kind == BizEntityKind.CITY
-                        else BizRelationKind.IN_PROVINCE)
+            loc_kind = BizRelationKind.IN_CITY if entity.kind == BizEntityKind.CITY else BizRelationKind.IN_PROVINCE
             for rel, c_ent in self._repo.get_neighbors(
-                scope_uid, direction="in", kinds=[loc_kind], limit=2000,
+                scope_uid,
+                direction="in",
+                kinds=[loc_kind],
+                limit=2000,
             ):
                 if c_ent.kind != BizEntityKind.COMPANY:
                     continue
@@ -793,8 +799,10 @@ class CompetitiveIntelligenceEngine:
         elif entity.kind == BizEntityKind.INDUSTRY:
             # Industry scope
             for rel, c_ent in self._repo.get_neighbors(
-                scope_uid, direction="in",
-                kinds=[BizRelationKind.IN_INDUSTRY], limit=2000,
+                scope_uid,
+                direction="in",
+                kinds=[BizRelationKind.IN_INDUSTRY],
+                limit=2000,
             ):
                 if c_ent.kind != BizEntityKind.COMPANY:
                     continue
@@ -806,8 +814,7 @@ class CompetitiveIntelligenceEngine:
 
     # ── Market share ──────────────────────────────────────────────────────────
 
-    def market_share(self, scope_uid: str, by: str = "company",
-                     limit: int = 50) -> dict:
+    def market_share(self, scope_uid: str, by: str = "company", limit: int = 50) -> dict:
         """
         Percentage market share breakdown.
 
@@ -855,18 +862,22 @@ class CompetitiveIntelligenceEngine:
 
         if entity.kind == BizEntityKind.ORGANIZATION:
             for rel, t_ent in self._repo.get_neighbors(
-                scope_uid, direction="in",
-                kinds=[BizRelationKind.ISSUED_BY], limit=5000,
+                scope_uid,
+                direction="in",
+                kinds=[BizRelationKind.ISSUED_BY],
+                limit=5000,
             ):
                 if t_ent.kind == BizEntityKind.TENDER:
                     tenders.append(t_ent.uid)
 
         elif entity.kind in (BizEntityKind.CITY, BizEntityKind.PROVINCE):
-            loc_kind = (BizRelationKind.IN_CITY if entity.kind == BizEntityKind.CITY
-                        else BizRelationKind.IN_PROVINCE)
+            loc_kind = BizRelationKind.IN_CITY if entity.kind == BizEntityKind.CITY else BizRelationKind.IN_PROVINCE
             seen: set[str] = set()
             for _, c_ent in self._repo.get_neighbors(
-                scope_uid, direction="in", kinds=[loc_kind], limit=2000,
+                scope_uid,
+                direction="in",
+                kinds=[loc_kind],
+                limit=2000,
             ):
                 if c_ent.kind != BizEntityKind.COMPANY:
                     continue
@@ -878,8 +889,10 @@ class CompetitiveIntelligenceEngine:
         elif entity.kind == BizEntityKind.INDUSTRY:
             seen = set()
             for _, c_ent in self._repo.get_neighbors(
-                scope_uid, direction="in",
-                kinds=[BizRelationKind.IN_INDUSTRY], limit=2000,
+                scope_uid,
+                direction="in",
+                kinds=[BizRelationKind.IN_INDUSTRY],
+                limit=2000,
             ):
                 if c_ent.kind != BizEntityKind.COMPANY:
                     continue
@@ -905,9 +918,7 @@ class CompetitiveIntelligenceEngine:
 
         if by == "year":
             year = _parse_year(
-                t_ent.attributes.get("valid_from") or
-                t_ent.attributes.get("date") or
-                t_ent.attributes.get("award_date")
+                t_ent.attributes.get("valid_from") or t_ent.attributes.get("date") or t_ent.attributes.get("award_date")
             )
             return str(year) if year else None
 
@@ -921,7 +932,10 @@ class CompetitiveIntelligenceEngine:
             if not w:
                 return None
             for _, city_ent in self._repo.get_neighbors(
-                w[0], direction="out", kinds=_CITY_KINDS, limit=5,
+                w[0],
+                direction="out",
+                kinds=_CITY_KINDS,
+                limit=5,
             ):
                 return city_ent.name
             return None
@@ -931,7 +945,10 @@ class CompetitiveIntelligenceEngine:
             if not w:
                 return None
             for _, prov_ent in self._repo.get_neighbors(
-                w[0], direction="out", kinds=_PROVINCE_KINDS, limit=5,
+                w[0],
+                direction="out",
+                kinds=_PROVINCE_KINDS,
+                limit=5,
             ):
                 return prov_ent.name
             return None
@@ -941,7 +958,10 @@ class CompetitiveIntelligenceEngine:
             if not w:
                 return None
             for _, ind_ent in self._repo.get_neighbors(
-                w[0], direction="out", kinds=_INDUSTRY_KINDS, limit=5,
+                w[0],
+                direction="out",
+                kinds=_INDUSTRY_KINDS,
+                limit=5,
             ):
                 return ind_ent.name
             return None
@@ -974,17 +994,16 @@ class CompetitiveIntelligenceEngine:
             c_ent = self._repo.get(c_uid)
             if not c_ent:
                 continue
-            suppliers.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "win_count": count,
-                "market_share": round(count / total, 4) if total else 0.0,
-                "confidence": _confidence(count),
-                "evidence": [
-                    _ev(c_uid, "awarded_in_scope", scope_uid,
-                        c_ent.name, entity.name)
-                ],
-            })
+            suppliers.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "win_count": count,
+                    "market_share": round(count / total, 4) if total else 0.0,
+                    "confidence": _confidence(count),
+                    "evidence": [_ev(c_uid, "awarded_in_scope", scope_uid, c_ent.name, entity.name)],
+                }
+            )
 
         return {
             "scope_uid": scope_uid,
@@ -997,8 +1016,7 @@ class CompetitiveIntelligenceEngine:
 
     # ── Challenger companies ──────────────────────────────────────────────────
 
-    def challenger_companies(self, scope_uid: str, lookback_years: int = 2,
-                              limit: int = 20) -> dict:
+    def challenger_companies(self, scope_uid: str, lookback_years: int = 2, limit: int = 20) -> dict:
         """
         Identify rising challengers vs entrenched incumbents in a market scope.
 
@@ -1011,6 +1029,7 @@ class CompetitiveIntelligenceEngine:
             return {"error": f"Entity not found: {scope_uid}"}
 
         import datetime
+
         current_year = datetime.date.today().year
         cutoff = current_year - lookback_years
 
@@ -1018,14 +1037,11 @@ class CompetitiveIntelligenceEngine:
 
         # awards per company per period
         recent_wins: dict[str, int] = defaultdict(int)
-        older_wins:  dict[str, int] = defaultdict(int)
+        older_wins: dict[str, int] = defaultdict(int)
 
         for t_uid in tenders:
             t_ent = self._repo.get(t_uid)
-            year = _parse_year(
-                t_ent.attributes.get("valid_from") or
-                t_ent.attributes.get("date") if t_ent else None
-            )
+            year = _parse_year(t_ent.attributes.get("valid_from") or t_ent.attributes.get("date") if t_ent else None)
             w = _tender_winner(self._repo, t_uid)
             if not w:
                 continue
@@ -1038,9 +1054,7 @@ class CompetitiveIntelligenceEngine:
         total_recent = sum(recent_wins.values()) or 1
 
         # identify incumbent = highest total historical wins
-        incumbents = sorted(
-            older_wins.items(), key=lambda x: x[1], reverse=True
-        )
+        incumbents = sorted(older_wins.items(), key=lambda x: x[1], reverse=True)
         incumbent_uids = {uid for uid, _ in incumbents[:3]}
 
         challengers = []
@@ -1055,19 +1069,18 @@ class CompetitiveIntelligenceEngine:
             c_ent = self._repo.get(c_uid)
             if not c_ent:
                 continue
-            challengers.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "recent_wins": rw,
-                "older_wins": ow,
-                "growth_ratio": round(growth, 2),
-                "recent_share": round(rw / total_recent, 4),
-                "confidence": _confidence(rw),
-                "evidence": [
-                    _ev(c_uid, "recent_award_in_scope", scope_uid,
-                        c_ent.name, entity.name)
-                ],
-            })
+            challengers.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "recent_wins": rw,
+                    "older_wins": ow,
+                    "growth_ratio": round(growth, 2),
+                    "recent_share": round(rw / total_recent, 4),
+                    "confidence": _confidence(rw),
+                    "evidence": [_ev(c_uid, "recent_award_in_scope", scope_uid, c_ent.name, entity.name)],
+                }
+            )
 
         challengers.sort(key=lambda x: x["growth_ratio"], reverse=True)
 
@@ -1075,11 +1088,13 @@ class CompetitiveIntelligenceEngine:
         for c_uid, count in incumbents[:5]:
             c_ent = self._repo.get(c_uid)
             if c_ent:
-                incumbents_out.append({
-                    "uid": c_uid,
-                    "name": c_ent.name,
-                    "historical_wins": count,
-                })
+                incumbents_out.append(
+                    {
+                        "uid": c_uid,
+                        "name": c_ent.name,
+                        "historical_wins": count,
+                    }
+                )
 
         return {
             "scope_uid": scope_uid,
@@ -1121,8 +1136,7 @@ class CompetitiveIntelligenceEngine:
         entity = self._repo.get(uid)
         tenders = _company_tenders(self._repo, uid)
 
-        won_tenders = [(t, n) for t, n, k in tenders
-                       if k == BizRelationKind.AWARDED_TO.value]
+        won_tenders = [(t, n) for t, n, k in tenders if k == BizRelationKind.AWARDED_TO.value]
 
         bawd = _bawd_score(self._repo, uid, won_tenders)
         score = bawd["score"]
@@ -1130,21 +1144,21 @@ class CompetitiveIntelligenceEngine:
         evidence = [_ev(uid, "awarded_to", t, entity.name) for t, _ in won_tenders[:10]]
 
         return {
-            "uid":              uid,
-            "name":             entity.name,
-            "wins":             len(won_tenders),
-            "bids":             0,
-            "participations":   0,
+            "uid": uid,
+            "name": entity.name,
+            "wins": len(won_tenders),
+            "bids": 0,
+            "participations": 0,
             "total_tender_events": len(won_tenders),
-            "win_rate":         score,
-            "loss_rate":        round(1.0 - score, 4),
-            "bid_frequency":    len(won_tenders),
-            "buyer_count":      bawd["buyer_count"],
-            "value_coverage":   bawd["value_coverage"],
-            "win_rate_method":  "bawd",
+            "win_rate": score,
+            "loss_rate": round(1.0 - score, 4),
+            "bid_frequency": len(won_tenders),
+            "buyer_count": bawd["buyer_count"],
+            "value_coverage": bawd["value_coverage"],
+            "win_rate_method": "bawd",
             "per_buyer_detail": bawd["per_buyer"],
-            "confidence":       _confidence(len(won_tenders)),
-            "evidence":         evidence,
+            "confidence": _confidence(len(won_tenders)),
+            "evidence": evidence,
         }
 
     # ── Growth trend ──────────────────────────────────────────────────────────
@@ -1168,9 +1182,7 @@ class CompetitiveIntelligenceEngine:
             if not t_ent:
                 continue
             year = _parse_year(
-                t_ent.attributes.get("valid_from") or
-                t_ent.attributes.get("date") or
-                t_ent.attributes.get("award_date")
+                t_ent.attributes.get("valid_from") or t_ent.attributes.get("date") or t_ent.attributes.get("award_date")
             )
             if not year:
                 continue
@@ -1194,8 +1206,8 @@ class CompetitiveIntelligenceEngine:
         trend = "insufficient_data"
         if len(years_sorted) >= 2:
             totals = [yearly[y]["total"] for y in years_sorted]
-            last   = totals[-1]
-            prev   = totals[-2]
+            last = totals[-1]
+            prev = totals[-2]
             if last > prev * 1.1:
                 trend = "growing"
             elif last < prev * 0.9:
@@ -1214,8 +1226,7 @@ class CompetitiveIntelligenceEngine:
 
     # ── Competitor rankings ───────────────────────────────────────────────────
 
-    def competitor_rankings(self, scope_uid: str, by: str = "wins",
-                             limit: int = 30) -> dict:
+    def competitor_rankings(self, scope_uid: str, by: str = "wins", limit: int = 30) -> dict:
         """
         Ranked company list for a market scope.
 
@@ -1245,26 +1256,28 @@ class CompetitiveIntelligenceEngine:
             c_ent = self._repo.get(c_uid)
             if not c_ent:
                 continue
-            wins  = company_wins.get(c_uid, 0)
-            bids  = company_bids.get(c_uid, 0)
+            wins = company_wins.get(c_uid, 0)
+            bids = company_bids.get(c_uid, 0)
             total = wins + bids
-            wr    = round(wins / total, 4) if total else 0.0
+            wr = round(wins / total, 4) if total else 0.0
             share = round(wins / total_wins, 4)
-            ranked.append({
-                "uid": c_uid,
-                "name": c_ent.name,
-                "wins": wins,
-                "bids": bids,
-                "total_appearances": total,
-                "win_rate": wr,
-                "market_share": share,
-                "confidence": _confidence(total),
-            })
+            ranked.append(
+                {
+                    "uid": c_uid,
+                    "name": c_ent.name,
+                    "wins": wins,
+                    "bids": bids,
+                    "total_appearances": total,
+                    "win_rate": wr,
+                    "market_share": share,
+                    "confidence": _confidence(total),
+                }
+            )
 
         sort_key_map = {
-            "wins":         lambda x: x["wins"],
-            "bids":         lambda x: x["bids"],
-            "win_rate":     lambda x: x["win_rate"],
+            "wins": lambda x: x["wins"],
+            "bids": lambda x: x["bids"],
+            "win_rate": lambda x: x["win_rate"],
             "market_share": lambda x: x["market_share"],
         }
         ranked.sort(key=sort_key_map.get(by, sort_key_map["wins"]), reverse=True)
@@ -1307,18 +1320,14 @@ class CompetitiveIntelligenceEngine:
 
         # 2 — win rate component (inverted), using BAWD so it is not 0.0
         #     when SUBMITTED_BID edges are absent
-        won_tenders_cp = [(t, "") for t, _, k in tenders
-                          if k == BizRelationKind.AWARDED_TO.value]
-        bawd_cp   = _bawd_score(self._repo, uid, won_tenders_cp)
+        won_tenders_cp = [(t, "") for t, _, k in tenders if k == BizRelationKind.AWARDED_TO.value]
+        bawd_cp = _bawd_score(self._repo, uid, won_tenders_cp)
         win_rate_v = bawd_cp["score"]
         win_pressure = round(1.0 - win_rate_v, 4)
 
         # 3 — co-bidder intensity
         if tenders:
-            co_bidder_per_tender = [
-                len(_tender_companies(self._repo, t_uid)) - 1
-                for t_uid, _, _ in tenders
-            ]
+            co_bidder_per_tender = [len(_tender_companies(self._repo, t_uid)) - 1 for t_uid, _, _ in tenders]
             avg_co = sum(co_bidder_per_tender) / len(tenders)
             co_intensity = min(1.0, avg_co / 5.0)
         else:
@@ -1343,22 +1352,15 @@ class CompetitiveIntelligenceEngine:
 
         # Composite: weighted average
         pressure = round(
-            0.30 * competitor_density +
-            0.35 * win_pressure +
-            0.20 * co_intensity +
-            0.15 * buyer_hhi,
-            4
+            0.30 * competitor_density + 0.35 * win_pressure + 0.20 * co_intensity + 0.15 * buyer_hhi,
+            4,
         )
 
         return {
             "uid": uid,
             "name": entity.name,
             "competitive_pressure_score": pressure,
-            "pressure_level": (
-                "high" if pressure >= 0.65 else
-                "medium" if pressure >= 0.35 else
-                "low"
-            ),
+            "pressure_level": ("high" if pressure >= 0.65 else "medium" if pressure >= 0.35 else "low"),
             "components": {
                 "competitor_density": round(competitor_density, 4),
                 "win_pressure": win_pressure,
@@ -1368,7 +1370,5 @@ class CompetitiveIntelligenceEngine:
             "unique_competitors": len(unique_competitors),
             "total_tender_events": len(tenders),
             "confidence": _confidence(len(tenders)),
-            "evidence": [
-                _ev(uid, "bid_event", t, entity.name) for t, _, _ in tenders[:10]
-            ],
+            "evidence": [_ev(uid, "bid_event", t, entity.name) for t, _, _ in tenders[:10]],
         }

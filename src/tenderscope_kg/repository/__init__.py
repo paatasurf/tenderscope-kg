@@ -9,6 +9,7 @@ Public surface:
 Backend implementations are private (_sqlite.py, _postgres.py) and must never
 be imported directly by engines, query engines, or importers.
 """
+
 from __future__ import annotations
 
 import os
@@ -40,14 +41,13 @@ def create_repository(backend: str, **kwargs) -> BizRepository:
     """
     if backend == "sqlite":
         from ._sqlite import BizRepositorySQLite
+
         return BizRepositorySQLite(**kwargs)
     if backend == "postgres":
         from ._postgres import BizRepositoryPG  # type: ignore[import]
+
         return BizRepositoryPG(**kwargs)
-    raise ValueError(
-        f"Unknown repository backend: {backend!r}. "
-        f"Valid options: 'sqlite', 'postgres'."
-    )
+    raise ValueError(f"Unknown repository backend: {backend!r}. Valid options: 'sqlite', 'postgres'.")
 
 
 def open_repository(sqlite_db_path: Optional[Path] = None) -> BizRepository:
@@ -65,6 +65,7 @@ def open_repository(sqlite_db_path: Optional[Path] = None) -> BizRepository:
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if database_url:
         import psycopg2  # noqa: PLC0415
+
         repo = create_repository(
             "postgres",
             conn_factory=lambda: psycopg2.connect(database_url),

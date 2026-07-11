@@ -43,6 +43,7 @@ Design
 * Contract value strings like "CAD 273,936.60" are cleaned to floats.
 * Empty / whitespace-only strings are treated as missing.
 """
+
 from __future__ import annotations
 
 import csv
@@ -58,22 +59,38 @@ from ..repository._base import BizRepository
 from .base import BaseImporter
 
 # ── Known Canadian province names / abbreviations ─────────────────────────────
-_PROVINCES: frozenset[str] = frozenset({
-    "british columbia", "bc",
-    "alberta", "ab",
-    "ontario", "on",
-    "quebec", "qc",
-    "nova scotia", "ns",
-    "new brunswick", "nb",
-    "manitoba", "mb",
-    "saskatchewan", "sk",
-    "newfoundland", "newfoundland and labrador", "nl",
-    "prince edward island", "pei",
-    "northwest territories", "nt",
-    "yukon", "yt",
-    "nunavut", "nu",
-    "canada",
-})
+_PROVINCES: frozenset[str] = frozenset(
+    {
+        "british columbia",
+        "bc",
+        "alberta",
+        "ab",
+        "ontario",
+        "on",
+        "quebec",
+        "qc",
+        "nova scotia",
+        "ns",
+        "new brunswick",
+        "nb",
+        "manitoba",
+        "mb",
+        "saskatchewan",
+        "sk",
+        "newfoundland",
+        "newfoundland and labrador",
+        "nl",
+        "prince edward island",
+        "pei",
+        "northwest territories",
+        "nt",
+        "yukon",
+        "yt",
+        "nunavut",
+        "nu",
+        "canada",
+    }
+)
 
 _PROVINCE_NORM: dict[str, str] = {
     "bc": "British Columbia",
@@ -171,12 +188,12 @@ class BCTenderImporter(BaseImporter):
         result = self._make_result()
 
         files = {
-            "tenders_csv":         self.data_dir / "tenders.csv",
-            "tenders_json":        self.data_dir / "tenders.json",
-            "commercial_tenders":  self.data_dir / "commercial_tenders.csv",
-            "arch_tenders":        self.data_dir / "arch_tenders.csv",
-            "contract_awards":     self.data_dir / "contract_awards.csv",
-            "building_permits":    self.data_dir / "building_permits.csv",
+            "tenders_csv": self.data_dir / "tenders.csv",
+            "tenders_json": self.data_dir / "tenders.json",
+            "commercial_tenders": self.data_dir / "commercial_tenders.csv",
+            "arch_tenders": self.data_dir / "arch_tenders.csv",
+            "contract_awards": self.data_dir / "contract_awards.csv",
+            "building_permits": self.data_dir / "building_permits.csv",
         }
 
         for label, path in files.items():
@@ -185,11 +202,11 @@ class BCTenderImporter(BaseImporter):
                 continue
             try:
                 sub = self._dispatch(label, path)
-                result.entities_created  += sub.entities_created
-                result.entities_updated  += sub.entities_updated
+                result.entities_created += sub.entities_created
+                result.entities_updated += sub.entities_updated
                 result.relations_created += sub.relations_created
                 result.relations_updated += sub.relations_updated
-                result.errors   += sub.errors
+                result.errors += sub.errors
                 result.warnings += sub.warnings
             except Exception as exc:
                 result.errors.append(f"{label}: {exc}")
@@ -222,7 +239,7 @@ class BCTenderImporter(BaseImporter):
             try:
                 self._process_federal_tender_row(row, result)
             except Exception as exc:
-                result.errors.append(f"Row {i+2}: {exc}")
+                result.errors.append(f"Row {i + 2}: {exc}")
         return result
 
     def import_federal_tenders_json(self, path: Path) -> ImportResult:
@@ -244,19 +261,17 @@ class BCTenderImporter(BaseImporter):
                 result.errors.append(f"Item {i}: {exc}")
         return result
 
-    def _process_federal_tender_row(
-        self, row: dict, result: ImportResult
-    ) -> None:
-        title       = _clean(row.get("title"))
-        org_name    = _clean(row.get("organization"))
-        category    = _clean(row.get("category"))
-        posted      = _clean(row.get("posted_date"))
-        closing     = _clean(row.get("closing_date"))
-        est_value   = _clean(row.get("estimated_value"))
-        location    = _clean(row.get("location"))
-        tender_id   = _clean(row.get("tender_id"))
-        url         = _clean(row.get("url"))
-        source      = _clean(row.get("source")) or self.source_tag
+    def _process_federal_tender_row(self, row: dict, result: ImportResult) -> None:
+        title = _clean(row.get("title"))
+        org_name = _clean(row.get("organization"))
+        category = _clean(row.get("category"))
+        posted = _clean(row.get("posted_date"))
+        closing = _clean(row.get("closing_date"))
+        est_value = _clean(row.get("estimated_value"))
+        location = _clean(row.get("location"))
+        tender_id = _clean(row.get("tender_id"))
+        url = _clean(row.get("url"))
+        source = _clean(row.get("source")) or self.source_tag
 
         if not title:
             result.warnings.append("Skipping row with empty title")
@@ -264,17 +279,26 @@ class BCTenderImporter(BaseImporter):
 
         # ── Tender entity ──────────────────────────────────────────────────
         attrs: dict = {"source": source}
-        if posted:     attrs["posted_date"]    = posted
-        if closing:    attrs["closing_date"]   = closing
-        if est_value:  attrs["estimated_value"] = est_value
-        if tender_id:  attrs["tender_id"]      = tender_id
-        if url:        attrs["url"]            = url
-        if category:   attrs["category"]       = category
-        if location:   attrs["location"]       = location
+        if posted:
+            attrs["posted_date"] = posted
+        if closing:
+            attrs["closing_date"] = closing
+        if est_value:
+            attrs["estimated_value"] = est_value
+        if tender_id:
+            attrs["tender_id"] = tender_id
+        if url:
+            attrs["url"] = url
+        if category:
+            attrs["category"] = category
+        if location:
+            attrs["location"] = location
 
         tender, created = self.repo.put_entity(
-            BizEntityKind.TENDER, title,
-            attributes=attrs, source=self.source_tag,
+            BizEntityKind.TENDER,
+            title,
+            attributes=attrs,
+            source=self.source_tag,
             write_history=self.write_history,
         )
         if created:
@@ -285,25 +309,37 @@ class BCTenderImporter(BaseImporter):
         # ── Buyer organization ─────────────────────────────────────────────
         if org_name:
             org, c = self.repo.put_entity(
-                BizEntityKind.ORGANIZATION, org_name,
-                source=self.source_tag, write_history=self.write_history,
+                BizEntityKind.ORGANIZATION,
+                org_name,
+                source=self.source_tag,
+                write_history=self.write_history,
             )
-            if c: result.entities_created += 1
-            else: result.entities_updated += 1
+            if c:
+                result.entities_created += 1
+            else:
+                result.entities_updated += 1
 
             _, rc = self.repo.put_relation(
-                org.uid, BizRelationKind.ISSUES, tender.uid,
+                org.uid,
+                BizRelationKind.ISSUES,
+                tender.uid,
                 source=self.source_tag,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
             _, rc = self.repo.put_relation(
-                tender.uid, BizRelationKind.ISSUED_BY, org.uid,
+                tender.uid,
+                BizRelationKind.ISSUED_BY,
+                org.uid,
                 source=self.source_tag,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
         # ── Location ───────────────────────────────────────────────────────
         if location:
@@ -313,17 +349,25 @@ class BCTenderImporter(BaseImporter):
         ind_name = _extract_industry(category)
         if ind_name:
             ind, c = self.repo.put_entity(
-                BizEntityKind.INDUSTRY, ind_name,
-                source=self.source_tag, write_history=False,
+                BizEntityKind.INDUSTRY,
+                ind_name,
+                source=self.source_tag,
+                write_history=False,
             )
-            if c: result.entities_created += 1
-            else: result.entities_updated += 1
+            if c:
+                result.entities_created += 1
+            else:
+                result.entities_updated += 1
             _, rc = self.repo.put_relation(
-                tender.uid, BizRelationKind.IN_INDUSTRY, ind.uid,
+                tender.uid,
+                BizRelationKind.IN_INDUSTRY,
+                ind.uid,
                 source=self.source_tag,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
     # ── Commercial / arch tenders (bidcentral / MERX) ─────────────────────────
 
@@ -341,21 +385,19 @@ class BCTenderImporter(BaseImporter):
             try:
                 self._process_buyer_tender_row(row, result)
             except Exception as exc:
-                result.errors.append(f"Row {i+2}: {exc}")
+                result.errors.append(f"Row {i + 2}: {exc}")
         return result
 
-    def _process_buyer_tender_row(
-        self, row: dict, result: ImportResult
-    ) -> None:
-        title       = _clean(row.get("title"))
-        buyer_name  = _clean(row.get("company"))
-        value       = _clean(row.get("value"))
-        deadline    = _clean(row.get("deadline"))
-        status      = _clean(row.get("status"))
-        category    = _clean(row.get("category"))
-        url         = _clean(row.get("url"))
-        tender_id   = _clean(row.get("tender_id"))
-        source      = _clean(row.get("source")) or self.source_tag
+    def _process_buyer_tender_row(self, row: dict, result: ImportResult) -> None:
+        title = _clean(row.get("title"))
+        buyer_name = _clean(row.get("company"))
+        value = _clean(row.get("value"))
+        deadline = _clean(row.get("deadline"))
+        status = _clean(row.get("status"))
+        category = _clean(row.get("category"))
+        url = _clean(row.get("url"))
+        tender_id = _clean(row.get("tender_id"))
+        source = _clean(row.get("source")) or self.source_tag
 
         if not title:
             return
@@ -367,43 +409,65 @@ class BCTenderImporter(BaseImporter):
         location = loc_match.group(1).strip() if loc_match else ""
 
         attrs: dict = {"source": source}
-        if deadline:    attrs["closing_date"]  = deadline
-        if value:       attrs["estimated_value"] = value
-        if status:      attrs["status"]        = status
-        if tender_id:   attrs["tender_id"]     = tender_id
-        if url:         attrs["url"]           = url
-        if category:    attrs["category"]      = category
+        if deadline:
+            attrs["closing_date"] = deadline
+        if value:
+            attrs["estimated_value"] = value
+        if status:
+            attrs["status"] = status
+        if tender_id:
+            attrs["tender_id"] = tender_id
+        if url:
+            attrs["url"] = url
+        if category:
+            attrs["category"] = category
 
         tender, created = self.repo.put_entity(
-            BizEntityKind.TENDER, clean_title,
-            attributes=attrs, source=self.source_tag,
+            BizEntityKind.TENDER,
+            clean_title,
+            attributes=attrs,
+            source=self.source_tag,
             write_history=self.write_history,
         )
-        if created: result.entities_created += 1
-        else:       result.entities_updated += 1
+        if created:
+            result.entities_created += 1
+        else:
+            result.entities_updated += 1
 
         # Buyer organization
         if buyer_name:
             org, c = self.repo.put_entity(
-                BizEntityKind.ORGANIZATION, buyer_name,
-                source=self.source_tag, write_history=self.write_history,
+                BizEntityKind.ORGANIZATION,
+                buyer_name,
+                source=self.source_tag,
+                write_history=self.write_history,
             )
-            if c: result.entities_created += 1
-            else: result.entities_updated += 1
+            if c:
+                result.entities_created += 1
+            else:
+                result.entities_updated += 1
 
             _, rc = self.repo.put_relation(
-                org.uid, BizRelationKind.ISSUES, tender.uid,
+                org.uid,
+                BizRelationKind.ISSUES,
+                tender.uid,
                 source=self.source_tag,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
             _, rc = self.repo.put_relation(
-                tender.uid, BizRelationKind.ISSUED_BY, org.uid,
+                tender.uid,
+                BizRelationKind.ISSUED_BY,
+                org.uid,
                 source=self.source_tag,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
         if location:
             self._link_location(tender, location, result)
@@ -411,17 +475,25 @@ class BCTenderImporter(BaseImporter):
         ind_name = _extract_industry(category)
         if ind_name:
             ind, c = self.repo.put_entity(
-                BizEntityKind.INDUSTRY, ind_name,
-                source=self.source_tag, write_history=False,
+                BizEntityKind.INDUSTRY,
+                ind_name,
+                source=self.source_tag,
+                write_history=False,
             )
-            if c: result.entities_created += 1
-            else: result.entities_updated += 1
+            if c:
+                result.entities_created += 1
+            else:
+                result.entities_updated += 1
             _, rc = self.repo.put_relation(
-                tender.uid, BizRelationKind.IN_INDUSTRY, ind.uid,
+                tender.uid,
+                BizRelationKind.IN_INDUSTRY,
+                ind.uid,
                 source=self.source_tag,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
     # ── Contract awards ────────────────────────────────────────────────────────
 
@@ -438,15 +510,15 @@ class BCTenderImporter(BaseImporter):
             try:
                 self._process_award_row(row, result)
             except Exception as exc:
-                result.errors.append(f"Row {i+2}: {exc}")
+                result.errors.append(f"Row {i + 2}: {exc}")
         return result
 
     def _process_award_row(self, row: dict, result: ImportResult) -> None:
-        company_name   = _clean(row.get("winner_company"))
+        company_name = _clean(row.get("winner_company"))
         contract_value = _clean(row.get("contract_value"))
-        award_date     = _clean(row.get("date"))
-        tender_title   = _clean(row.get("tender_title"))
-        url            = _clean(row.get("url"))
+        award_date = _clean(row.get("date"))
+        tender_title = _clean(row.get("tender_title"))
+        url = _clean(row.get("url"))
 
         if not company_name:
             result.warnings.append("Award row missing winner_company, skipping")
@@ -462,27 +534,38 @@ class BCTenderImporter(BaseImporter):
             cmp_attrs["last_award_date"] = award_date
 
         company, created = self.repo.put_entity(
-            BizEntityKind.COMPANY, company_name,
-            attributes=cmp_attrs, source=self.source_tag,
+            BizEntityKind.COMPANY,
+            company_name,
+            attributes=cmp_attrs,
+            source=self.source_tag,
             write_history=self.write_history,
         )
-        if created: result.entities_created += 1
-        else:       result.entities_updated += 1
+        if created:
+            result.entities_created += 1
+        else:
+            result.entities_updated += 1
 
         # ── Related tender ─────────────────────────────────────────────────
         if tender_title:
             tender_attrs: dict = {}
-            if url:         tender_attrs["url"]           = url
-            if award_date:  tender_attrs["award_date"]    = award_date
-            if contract_value: tender_attrs["contract_value"] = contract_value
+            if url:
+                tender_attrs["url"] = url
+            if award_date:
+                tender_attrs["award_date"] = award_date
+            if contract_value:
+                tender_attrs["contract_value"] = contract_value
 
             tender, tc = self.repo.put_entity(
-                BizEntityKind.TENDER, tender_title,
-                attributes=tender_attrs, source=self.source_tag,
+                BizEntityKind.TENDER,
+                tender_title,
+                attributes=tender_attrs,
+                source=self.source_tag,
                 write_history=self.write_history,
             )
-            if tc: result.entities_created += 1
-            else:  result.entities_updated += 1
+            if tc:
+                result.entities_created += 1
+            else:
+                result.entities_updated += 1
 
             # Company ──[awarded_to]──▶ Tender
             award_attrs: dict = {}
@@ -494,21 +577,31 @@ class BCTenderImporter(BaseImporter):
                 award_attrs["url"] = url
 
             _, rc = self.repo.put_relation(
-                company.uid, BizRelationKind.AWARDED_TO, tender.uid,
-                source=self.source_tag, attributes=award_attrs,
+                company.uid,
+                BizRelationKind.AWARDED_TO,
+                tender.uid,
+                source=self.source_tag,
+                attributes=award_attrs,
                 valid_from=award_date or None,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
             # Tender ──[awarded_to]──▶ Company  (reverse lookup convenience)
             _, rc = self.repo.put_relation(
-                tender.uid, BizRelationKind.AWARDED_TO, company.uid,
-                source=self.source_tag, attributes=award_attrs,
+                tender.uid,
+                BizRelationKind.AWARDED_TO,
+                company.uid,
+                source=self.source_tag,
+                attributes=award_attrs,
                 valid_from=award_date or None,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
     # ── Building permits ───────────────────────────────────────────────────────
 
@@ -527,21 +620,21 @@ class BCTenderImporter(BaseImporter):
             try:
                 self._process_permit_row(row, result)
             except Exception as exc:
-                result.errors.append(f"Row {i+2}: {exc}")
+                result.errors.append(f"Row {i + 2}: {exc}")
         return result
 
     def _process_permit_row(self, row: dict, result: ImportResult) -> None:
-        external_id   = _clean(row.get("external_id"))
-        address       = _clean(row.get("address"))
-        permit_type   = _clean(row.get("permit_type"))
+        external_id = _clean(row.get("external_id"))
+        address = _clean(row.get("address"))
+        permit_type = _clean(row.get("permit_type"))
         project_value = _clean(row.get("project_value"))
-        applicant     = _clean(row.get("applicant"))
-        issue_date    = _clean(row.get("issue_date"))
+        applicant = _clean(row.get("applicant"))
+        issue_date = _clean(row.get("issue_date"))
         application_date = _clean(row.get("application_date"))
-        description   = _clean(row.get("description"))
-        contractor    = _clean(row.get("contractor"))
-        local_area    = _clean(row.get("local_area"))
-        city          = _clean(row.get("city"))
+        description = _clean(row.get("description"))
+        contractor = _clean(row.get("contractor"))
+        local_area = _clean(row.get("local_area"))
+        city = _clean(row.get("city"))
 
         # Permit display name = external_id if available, else address
         permit_name = external_id if external_id else address
@@ -550,43 +643,63 @@ class BCTenderImporter(BaseImporter):
             return
 
         perm_attrs: dict = {}
-        if external_id:      perm_attrs["external_id"]      = external_id
-        if address:          perm_attrs["address"]          = address
-        if permit_type:      perm_attrs["permit_type"]      = permit_type
+        if external_id:
+            perm_attrs["external_id"] = external_id
+        if address:
+            perm_attrs["address"] = address
+        if permit_type:
+            perm_attrs["permit_type"] = permit_type
         if project_value:
             perm_attrs["project_value"] = project_value
             v = _parse_value(project_value)
             if v is not None:
                 perm_attrs["project_value_numeric"] = v
-        if issue_date:       perm_attrs["issue_date"]       = issue_date
-        if application_date: perm_attrs["application_date"] = application_date
-        if description:      perm_attrs["description"]      = description[:500]
-        if local_area:       perm_attrs["local_area"]       = local_area
-        if city:             perm_attrs["city"]             = city
+        if issue_date:
+            perm_attrs["issue_date"] = issue_date
+        if application_date:
+            perm_attrs["application_date"] = application_date
+        if description:
+            perm_attrs["description"] = description[:500]
+        if local_area:
+            perm_attrs["local_area"] = local_area
+        if city:
+            perm_attrs["city"] = city
 
         permit, created = self.repo.put_entity(
-            BizEntityKind.PERMIT, permit_name,
-            attributes=perm_attrs, source=self.source_tag,
+            BizEntityKind.PERMIT,
+            permit_name,
+            attributes=perm_attrs,
+            source=self.source_tag,
             write_history=self.write_history,
         )
-        if created: result.entities_created += 1
-        else:       result.entities_updated += 1
+        if created:
+            result.entities_created += 1
+        else:
+            result.entities_updated += 1
 
         # City location for permit
         permit_city = city or local_area
         if permit_city:
             city_ent, c = self.repo.put_entity(
-                BizEntityKind.CITY, permit_city,
-                source=self.source_tag, write_history=False,
+                BizEntityKind.CITY,
+                permit_city,
+                source=self.source_tag,
+                write_history=False,
             )
-            if c: result.entities_created += 1
-            else: result.entities_updated += 1
+            if c:
+                result.entities_created += 1
+            else:
+                result.entities_updated += 1
             _, rc = self.repo.put_relation(
-                permit.uid, BizRelationKind.IN_CITY, city_ent.uid,
+                permit.uid,
+                BizRelationKind.IN_CITY,
+                city_ent.uid,
                 source=self.source_tag,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
         # ── Applicant company ──────────────────────────────────────────────
         if applicant:
@@ -594,25 +707,36 @@ class BCTenderImporter(BaseImporter):
             if app_name:
                 person_name = self._extract_person_name(applicant)
                 app_attrs: dict = {}
-                if city:       app_attrs["city"]        = city
-                if local_area: app_attrs["local_area"]  = local_area
-                if person_name: app_attrs["contact_person"] = person_name
+                if city:
+                    app_attrs["city"] = city
+                if local_area:
+                    app_attrs["local_area"] = local_area
+                if person_name:
+                    app_attrs["contact_person"] = person_name
 
                 app_co, c = self.repo.put_entity(
-                    BizEntityKind.COMPANY, app_name,
-                    attributes=app_attrs, source=self.source_tag,
+                    BizEntityKind.COMPANY,
+                    app_name,
+                    attributes=app_attrs,
+                    source=self.source_tag,
                     write_history=self.write_history,
                 )
-                if c: result.entities_created += 1
-                else: result.entities_updated += 1
+                if c:
+                    result.entities_created += 1
+                else:
+                    result.entities_updated += 1
 
                 _, rc = self.repo.put_relation(
-                    app_co.uid, BizRelationKind.APPLIED_FOR, permit.uid,
+                    app_co.uid,
+                    BizRelationKind.APPLIED_FOR,
+                    permit.uid,
                     source=self.source_tag,
                     valid_from=application_date or issue_date or None,
                 )
-                if rc: result.relations_created += 1
-                else:  result.relations_updated += 1
+                if rc:
+                    result.relations_created += 1
+                else:
+                    result.relations_updated += 1
 
                 if city:
                     self._link_city(app_co, city, result)
@@ -622,65 +746,86 @@ class BCTenderImporter(BaseImporter):
             con_name = self._extract_company_name(contractor)
             if con_name:
                 con_attrs: dict = {}
-                if city: con_attrs["city"] = city
+                if city:
+                    con_attrs["city"] = city
 
                 con_co, c = self.repo.put_entity(
-                    BizEntityKind.COMPANY, con_name,
-                    attributes=con_attrs, source=self.source_tag,
+                    BizEntityKind.COMPANY,
+                    con_name,
+                    attributes=con_attrs,
+                    source=self.source_tag,
                     write_history=self.write_history,
                 )
-                if c: result.entities_created += 1
-                else: result.entities_updated += 1
+                if c:
+                    result.entities_created += 1
+                else:
+                    result.entities_updated += 1
 
                 _, rc = self.repo.put_relation(
-                    con_co.uid, BizRelationKind.CONTRACTED_FOR, permit.uid,
+                    con_co.uid,
+                    BizRelationKind.CONTRACTED_FOR,
+                    permit.uid,
                     source=self.source_tag,
                     valid_from=issue_date or None,
                 )
-                if rc: result.relations_created += 1
-                else:  result.relations_updated += 1
+                if rc:
+                    result.relations_created += 1
+                else:
+                    result.relations_updated += 1
 
                 if city:
                     self._link_city(con_co, city, result)
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
-    def _link_location(
-        self, entity, location: str, result: ImportResult
-    ) -> None:
+    def _link_location(self, entity, location: str, result: ImportResult) -> None:
         """Parse a location string and create CTY/PRV entities + relations."""
         cities, provinces = _parse_location(location)
         for city_name in cities:
             self._link_city(entity, city_name, result)
         for prov_name in provinces:
             prov, c = self.repo.put_entity(
-                BizEntityKind.PROVINCE, prov_name,
-                source=self.source_tag, write_history=False,
+                BizEntityKind.PROVINCE,
+                prov_name,
+                source=self.source_tag,
+                write_history=False,
             )
-            if c: result.entities_created += 1
-            else: result.entities_updated += 1
+            if c:
+                result.entities_created += 1
+            else:
+                result.entities_updated += 1
             _, rc = self.repo.put_relation(
-                entity.uid, BizRelationKind.IN_PROVINCE, prov.uid,
+                entity.uid,
+                BizRelationKind.IN_PROVINCE,
+                prov.uid,
                 source=self.source_tag,
             )
-            if rc: result.relations_created += 1
-            else:  result.relations_updated += 1
+            if rc:
+                result.relations_created += 1
+            else:
+                result.relations_updated += 1
 
-    def _link_city(
-        self, entity, city_name: str, result: ImportResult
-    ) -> None:
+    def _link_city(self, entity, city_name: str, result: ImportResult) -> None:
         city_ent, c = self.repo.put_entity(
-            BizEntityKind.CITY, city_name,
-            source=self.source_tag, write_history=False,
+            BizEntityKind.CITY,
+            city_name,
+            source=self.source_tag,
+            write_history=False,
         )
-        if c: result.entities_created += 1
-        else: result.entities_updated += 1
+        if c:
+            result.entities_created += 1
+        else:
+            result.entities_updated += 1
         _, rc = self.repo.put_relation(
-            entity.uid, BizRelationKind.IN_CITY, city_ent.uid,
+            entity.uid,
+            BizRelationKind.IN_CITY,
+            city_ent.uid,
             source=self.source_tag,
         )
-        if rc: result.relations_created += 1
-        else:  result.relations_updated += 1
+        if rc:
+            result.relations_created += 1
+        else:
+            result.relations_updated += 1
 
     @staticmethod
     def _extract_company_name(raw: str) -> str:

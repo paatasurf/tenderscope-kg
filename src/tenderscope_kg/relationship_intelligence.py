@@ -34,6 +34,7 @@ Public API
   geographic_clusters(city_or_prov)    → companies co-located
   organization_influence(org_uid)      → buyer's influence on the company network
 """
+
 from __future__ import annotations
 
 import re
@@ -43,32 +44,31 @@ from typing import Any, Optional
 from .domain import BizEntityKind, BizRelationKind
 from .repository._base import BizRepository
 
-
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 # Weight per relation type when computing relationship strength.
 # Higher = more meaningful evidence of a business relationship.
 _REL_WEIGHTS: dict[str, float] = {
-    BizRelationKind.AWARDED_TO.value:      1.0,
-    BizRelationKind.SUBMITTED_BID.value:   0.7,
+    BizRelationKind.AWARDED_TO.value: 1.0,
+    BizRelationKind.SUBMITTED_BID.value: 0.7,
     BizRelationKind.PARTICIPATED_IN.value: 0.6,
-    BizRelationKind.WORKS_WITH.value:      0.9,
-    BizRelationKind.CONTRACTED_FOR.value:  0.8,
-    BizRelationKind.APPLIED_FOR.value:     0.5,
-    BizRelationKind.ISSUED_BY.value:       0.7,
-    BizRelationKind.ISSUES.value:          0.7,
-    BizRelationKind.IN_INDUSTRY.value:     0.4,
-    BizRelationKind.IN_CITY.value:         0.3,
-    BizRelationKind.IN_PROVINCE.value:     0.2,
-    BizRelationKind.EMPLOYS.value:         0.6,
-    BizRelationKind.EMPLOYED_BY.value:     0.6,
-    BizRelationKind.OWNS.value:            0.8,
-    BizRelationKind.OWNED_BY.value:        0.8,
-    BizRelationKind.PARENT_OF.value:       0.8,
-    BizRelationKind.SUBSIDIARY_OF.value:   0.8,
-    BizRelationKind.MEMBER_OF.value:       0.5,
-    BizRelationKind.RELATED_TO.value:      0.4,
-    BizRelationKind.LICENSED_BY.value:     0.5,
+    BizRelationKind.WORKS_WITH.value: 0.9,
+    BizRelationKind.CONTRACTED_FOR.value: 0.8,
+    BizRelationKind.APPLIED_FOR.value: 0.5,
+    BizRelationKind.ISSUED_BY.value: 0.7,
+    BizRelationKind.ISSUES.value: 0.7,
+    BizRelationKind.IN_INDUSTRY.value: 0.4,
+    BizRelationKind.IN_CITY.value: 0.3,
+    BizRelationKind.IN_PROVINCE.value: 0.2,
+    BizRelationKind.EMPLOYS.value: 0.6,
+    BizRelationKind.EMPLOYED_BY.value: 0.6,
+    BizRelationKind.OWNS.value: 0.8,
+    BizRelationKind.OWNED_BY.value: 0.8,
+    BizRelationKind.PARENT_OF.value: 0.8,
+    BizRelationKind.SUBSIDIARY_OF.value: 0.8,
+    BizRelationKind.MEMBER_OF.value: 0.5,
+    BizRelationKind.RELATED_TO.value: 0.4,
+    BizRelationKind.LICENSED_BY.value: 0.5,
 }
 _DEFAULT_WEIGHT = 0.3
 
@@ -88,6 +88,7 @@ _TRAVERSAL_KINDS: list[BizRelationKind] = list(BizRelationKind)
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+
 def _rel_weight(kind_value: str) -> float:
     return _REL_WEIGHTS.get(kind_value, _DEFAULT_WEIGHT)
 
@@ -106,7 +107,7 @@ def _strength_from_evidence(evidence: list[dict]) -> float:
     )
     score = 0.0
     for i, w in enumerate(weights):
-        score += w * (0.7 ** i)  # geometric decay
+        score += w * (0.7**i)  # geometric decay
     return round(min(1.0, score), 4)
 
 
@@ -142,6 +143,7 @@ def _require_entity(repo: BizRepository, uid: str) -> tuple[Any, Optional[dict]]
 
 
 # ── Main class ────────────────────────────────────────────────────────────────
+
 
 class RelationshipIntelligenceEngine:
     """
@@ -196,7 +198,7 @@ class RelationshipIntelligenceEngine:
             + [{"relation": "shared_buyer", "uid": b["uid"], "name": b["name"]} for b in buyers]
             + [{"relation": "shared_competitor", "uid": c["uid"], "name": c["name"]} for c in competitors]
             + [{"relation": "shared_industry", "uid": i["uid"], "name": i["name"]} for i in industries]
-            + [{"relation": "shared_location", "uid": l["uid"], "name": l["name"]} for l in locations]
+            + [{"relation": "shared_location", "uid": loc["uid"], "name": loc["name"]} for loc in locations]
             + [{"relation": "co_appeared", "uid": ca["uid"], "name": ca["name"]} for ca in co_appear]
         )
 
@@ -204,16 +206,21 @@ class RelationshipIntelligenceEngine:
         confidence = _confidence_from_strength(strength, len(all_evidence))
 
         explanation_text = self._build_explanation_text(
-            entity_a.name, entity_b.name,
-            direct, buyers, competitors, industries, locations, co_appear, path_result,
+            entity_a.name,
+            entity_b.name,
+            direct,
+            buyers,
+            competitors,
+            industries,
+            locations,
+            co_appear,
+            path_result,
         )
 
         # Collect evidence paths
         evidence_paths: list[str] = []
         for r in direct:
-            evidence_paths.append(
-                f"{entity_a.name} [{uid_a}] --[{r['kind']}]--> {entity_b.name} [{uid_b}]"
-            )
+            evidence_paths.append(f"{entity_a.name} [{uid_a}] --[{r['kind']}]--> {entity_b.name} [{uid_b}]")
         if path_result:
             evidence_paths.append(_path_str(path_result))
         for b in buyers:
@@ -224,8 +231,7 @@ class RelationshipIntelligenceEngine:
             )
         for i in industries:
             evidence_paths.append(
-                f"{entity_a.name} --[in_industry]--> {i['name']} [{i['uid']}] "
-                f"<--[in_industry]-- {entity_b.name}"
+                f"{entity_a.name} --[in_industry]--> {i['name']} [{i['uid']}] <--[in_industry]-- {entity_b.name}"
             )
         for loc in locations:
             evidence_paths.append(
@@ -275,9 +281,7 @@ class RelationshipIntelligenceEngine:
             evs = [{"relation": rel_key} for _ in items]
             return _strength_from_evidence(evs)
 
-        direct_strength = _strength_from_evidence(
-            [{"relation": r["kind"]} for r in direct]
-        )
+        direct_strength = _strength_from_evidence([{"relation": r["kind"]} for r in direct])
         breakdown = {
             "direct_relations": {
                 "count": len(direct),
@@ -393,21 +397,21 @@ class RelationshipIntelligenceEngine:
 
         # Collect all 1-hop neighbours (outbound + inbound)
         direct_neighbors = self._repo.get_neighbors(uid, direction="both", limit=500)
-        direct_uids: set[str] = {nb.uid for _, nb in direct_neighbors}
+        {nb.uid for _, nb in direct_neighbors}
 
         # ── Shared-buyer inferences ───────────────────────────────────────────
         # uid → (awarded_to/submitted_bid) → tender → (issued_by) → org
         # Other companies touching the same org are inferred partners/rivals.
         buyer_links: list[dict] = []
         tender_uids = {
-            nb.uid for rel, nb in direct_neighbors
+            nb.uid
+            for rel, nb in direct_neighbors
             if rel.kind in (BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID)
         }
         org_uids: set[str] = set()
         for t_uid in tender_uids:
             for rel, nb in self._repo.get_neighbors(
-                t_uid, direction="out",
-                kinds=[BizRelationKind.ISSUED_BY], limit=10
+                t_uid, direction="out", kinds=[BizRelationKind.ISSUED_BY], limit=10
             ):
                 org_uids.add(nb.uid)
 
@@ -417,53 +421,51 @@ class RelationshipIntelligenceEngine:
             org_entity = self._repo.get(org_uid)
             org_name = org_entity.name if org_entity else org_uid
             for rel, tender in self._repo.get_neighbors(
-                org_uid, direction="in",
-                kinds=[BizRelationKind.ISSUED_BY], limit=200
+                org_uid, direction="in", kinds=[BizRelationKind.ISSUED_BY], limit=200
             ):
                 for rel2, co in self._repo.get_neighbors(
-                    tender.uid, direction="in",
+                    tender.uid,
+                    direction="in",
                     kinds=[BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID],
-                    limit=50
+                    limit=50,
                 ):
                     if co.uid != uid and co.kind == BizEntityKind.COMPANY:
                         peer_counter[co.uid].append(org_name)
 
-        for peer_uid, orgs in sorted(
-            peer_counter.items(), key=lambda x: -len(x[1])
-        )[:limit]:
+        for peer_uid, orgs in sorted(peer_counter.items(), key=lambda x: -len(x[1]))[:limit]:
             peer = self._repo.get(peer_uid)
             if not peer:
                 continue
             evs = [{"relation": "shared_buyer"} for _ in orgs]
             s = _strength_from_evidence(evs)
             c = _confidence_from_strength(s, len(orgs))
-            buyer_links.append({
-                "uid": peer_uid,
-                "name": peer.name,
-                "kind": "shared_buyer_link",
-                "shared_buyers": list(dict.fromkeys(orgs)),  # deduplicated
-                "strength": s,
-                "confidence": c,
-                "evidence_path": (
-                    f"{entity.name} [{uid}] --[awarded_to]--> tender "
-                    f"--[issued_by]--> {orgs[0]} <--[issued_by]-- tender "
-                    f"<--[awarded_to]-- {peer.name} [{peer_uid}]"
-                ),
-            })
+            buyer_links.append(
+                {
+                    "uid": peer_uid,
+                    "name": peer.name,
+                    "kind": "shared_buyer_link",
+                    "shared_buyers": list(dict.fromkeys(orgs)),  # deduplicated
+                    "strength": s,
+                    "confidence": c,
+                    "evidence_path": (
+                        f"{entity.name} [{uid}] --[awarded_to]--> tender "
+                        f"--[issued_by]--> {orgs[0]} <--[issued_by]-- tender "
+                        f"<--[awarded_to]-- {peer.name} [{peer_uid}]"
+                    ),
+                }
+            )
 
         # ── Subcontractor chain detection ─────────────────────────────────────
         # uid → (participated_in) → tender → (awarded_to) → another company
         # Implies the other company may have subcontracted uid.
         sub_hints: list[dict] = []
         participated_tender_uids = {
-            nb.uid for rel, nb in direct_neighbors
-            if rel.kind == BizRelationKind.PARTICIPATED_IN
+            nb.uid for rel, nb in direct_neighbors if rel.kind == BizRelationKind.PARTICIPATED_IN
         }
         sub_counter: dict[str, int] = defaultdict(int)
         for t_uid in participated_tender_uids:
             for rel2, winner in self._repo.get_neighbors(
-                t_uid, direction="in",
-                kinds=[BizRelationKind.AWARDED_TO], limit=50
+                t_uid, direction="in", kinds=[BizRelationKind.AWARDED_TO], limit=50
             ):
                 if winner.uid != uid and winner.kind == BizEntityKind.COMPANY:
                     sub_counter[winner.uid] += 1
@@ -475,24 +477,26 @@ class RelationshipIntelligenceEngine:
             evs = [{"relation": BizRelationKind.PARTICIPATED_IN.value}] * count
             s = _strength_from_evidence(evs)
             c = _confidence_from_strength(s, count)
-            sub_hints.append({
-                "uid": co_uid,
-                "name": co.name,
-                "kind": "subcontractor_hint",
-                "co_tender_count": count,
-                "strength": s,
-                "confidence": c,
-                "evidence_path": (
-                    f"{entity.name} [{uid}] --[participated_in]--> tender "
-                    f"<--[awarded_to]-- {co.name} [{co_uid}]"
-                ),
-            })
+            sub_hints.append(
+                {
+                    "uid": co_uid,
+                    "name": co.name,
+                    "kind": "subcontractor_hint",
+                    "co_tender_count": count,
+                    "strength": s,
+                    "confidence": c,
+                    "evidence_path": (
+                        f"{entity.name} [{uid}] --[participated_in]--> tender <--[awarded_to]-- {co.name} [{co_uid}]"
+                    ),
+                }
+            )
 
         # ── Recurring partnership detection ───────────────────────────────────
         # Count how many unique tenders (awarded_to OR submitted_bid) overlap
         # with another company. ≥2 overlaps → recurring partnership hint.
         awarded_tender_uids = {
-            nb.uid for rel, nb in direct_neighbors
+            nb.uid
+            for rel, nb in direct_neighbors
             if rel.kind in _STRONG_KINDS or rel.kind == BizRelationKind.AWARDED_TO
         }
         partnership_counter: dict[str, list[str]] = defaultdict(list)
@@ -500,17 +504,16 @@ class RelationshipIntelligenceEngine:
             tender_e = self._repo.get(t_uid)
             t_name = tender_e.name if tender_e else t_uid
             for rel2, co in self._repo.get_neighbors(
-                t_uid, direction="in",
+                t_uid,
+                direction="in",
                 kinds=[BizRelationKind.AWARDED_TO, BizRelationKind.WORKS_WITH],
-                limit=50
+                limit=50,
             ):
                 if co.uid != uid and co.kind == BizEntityKind.COMPANY:
                     partnership_counter[co.uid].append(t_name)
 
         partnership_hints: list[dict] = []
-        for co_uid, tenders in sorted(
-            partnership_counter.items(), key=lambda x: -len(x[1])
-        )[:limit]:
+        for co_uid, tenders in sorted(partnership_counter.items(), key=lambda x: -len(x[1]))[:limit]:
             if len(tenders) < 2:
                 continue
             co = self._repo.get(co_uid)
@@ -519,102 +522,102 @@ class RelationshipIntelligenceEngine:
             evs = [{"relation": BizRelationKind.AWARDED_TO.value}] * len(tenders)
             s = _strength_from_evidence(evs)
             c = _confidence_from_strength(s, len(tenders))
-            partnership_hints.append({
-                "uid": co_uid,
-                "name": co.name,
-                "kind": "recurring_partnership",
-                "shared_tender_count": len(tenders),
-                "shared_tenders": list(dict.fromkeys(tenders))[:10],
-                "strength": s,
-                "confidence": c,
-                "evidence_path": (
-                    f"{entity.name} [{uid}] --[awarded_to]--> "
-                    f"{tenders[0]} <--[awarded_to]-- {co.name} [{co_uid}]"
-                ),
-            })
+            partnership_hints.append(
+                {
+                    "uid": co_uid,
+                    "name": co.name,
+                    "kind": "recurring_partnership",
+                    "shared_tender_count": len(tenders),
+                    "shared_tenders": list(dict.fromkeys(tenders))[:10],
+                    "strength": s,
+                    "confidence": c,
+                    "evidence_path": (
+                        f"{entity.name} [{uid}] --[awarded_to]--> {tenders[0]} <--[awarded_to]-- {co.name} [{co_uid}]"
+                    ),
+                }
+            )
 
         # ── Industry cluster peers ────────────────────────────────────────────
-        industry_uids = {
-            nb.uid for rel, nb in direct_neighbors
-            if rel.kind == BizRelationKind.IN_INDUSTRY
-        }
+        industry_uids = {nb.uid for rel, nb in direct_neighbors if rel.kind == BizRelationKind.IN_INDUSTRY}
         ind_peers: dict[str, set[str]] = defaultdict(set)  # co_uid → set of industry names
         for ind_uid in industry_uids:
             ind_e = self._repo.get(ind_uid)
             ind_name = ind_e.name if ind_e else ind_uid
             for rel2, co in self._repo.get_neighbors(
-                ind_uid, direction="in",
-                kinds=[BizRelationKind.IN_INDUSTRY], limit=200
+                ind_uid, direction="in", kinds=[BizRelationKind.IN_INDUSTRY], limit=200
             ):
                 if co.uid != uid and co.kind == BizEntityKind.COMPANY:
                     ind_peers[co.uid].add(ind_name)
 
         industry_cluster_peers: list[dict] = []
-        for co_uid, ind_names in sorted(
-            ind_peers.items(), key=lambda x: -len(x[1])
-        )[:limit]:
+        for co_uid, ind_names in sorted(ind_peers.items(), key=lambda x: -len(x[1]))[:limit]:
             co = self._repo.get(co_uid)
             if not co:
                 continue
             evs = [{"relation": BizRelationKind.IN_INDUSTRY.value}] * len(ind_names)
             s = _strength_from_evidence(evs)
             c = _confidence_from_strength(s, len(ind_names))
-            industry_cluster_peers.append({
-                "uid": co_uid,
-                "name": co.name,
-                "kind": "industry_cluster_peer",
-                "shared_industries": sorted(ind_names),
-                "strength": s,
-                "confidence": c,
-                "evidence_path": (
-                    f"{entity.name} [{uid}] --[in_industry]--> "
-                    f"{next(iter(ind_names))} <--[in_industry]-- {co.name} [{co_uid}]"
-                ),
-            })
+            industry_cluster_peers.append(
+                {
+                    "uid": co_uid,
+                    "name": co.name,
+                    "kind": "industry_cluster_peer",
+                    "shared_industries": sorted(ind_names),
+                    "strength": s,
+                    "confidence": c,
+                    "evidence_path": (
+                        f"{entity.name} [{uid}] --[in_industry]--> "
+                        f"{next(iter(ind_names))} <--[in_industry]-- {co.name} [{co_uid}]"
+                    ),
+                }
+            )
 
         # ── Geographic cluster peers ──────────────────────────────────────────
         loc_uids = {
-            nb.uid for rel, nb in direct_neighbors
-            if rel.kind in (BizRelationKind.IN_CITY, BizRelationKind.IN_PROVINCE)
+            nb.uid for rel, nb in direct_neighbors if rel.kind in (BizRelationKind.IN_CITY, BizRelationKind.IN_PROVINCE)
         }
         geo_peers: dict[str, set[str]] = defaultdict(set)
         for loc_uid in loc_uids:
             loc_e = self._repo.get(loc_uid)
             loc_name = loc_e.name if loc_e else loc_uid
             for rel2, co in self._repo.get_neighbors(
-                loc_uid, direction="in",
+                loc_uid,
+                direction="in",
                 kinds=[BizRelationKind.IN_CITY, BizRelationKind.IN_PROVINCE],
-                limit=200
+                limit=200,
             ):
                 if co.uid != uid and co.kind == BizEntityKind.COMPANY:
                     geo_peers[co.uid].add(loc_name)
 
         geo_cluster_peers: list[dict] = []
-        for co_uid, locs in sorted(
-            geo_peers.items(), key=lambda x: -len(x[1])
-        )[:limit]:
+        for co_uid, locs in sorted(geo_peers.items(), key=lambda x: -len(x[1]))[:limit]:
             co = self._repo.get(co_uid)
             if not co:
                 continue
             evs = [{"relation": BizRelationKind.IN_CITY.value}] * len(locs)
             s = _strength_from_evidence(evs)
             c = _confidence_from_strength(s, len(locs))
-            geo_cluster_peers.append({
-                "uid": co_uid,
-                "name": co.name,
-                "kind": "geographic_cluster_peer",
-                "shared_locations": sorted(locs),
-                "strength": s,
-                "confidence": c,
-                "evidence_path": (
-                    f"{entity.name} [{uid}] --[in_city/in_province]--> "
-                    f"{next(iter(locs))} <--[in_city/in_province]-- {co.name} [{co_uid}]"
-                ),
-            })
+            geo_cluster_peers.append(
+                {
+                    "uid": co_uid,
+                    "name": co.name,
+                    "kind": "geographic_cluster_peer",
+                    "shared_locations": sorted(locs),
+                    "strength": s,
+                    "confidence": c,
+                    "evidence_path": (
+                        f"{entity.name} [{uid}] --[in_city/in_province]--> "
+                        f"{next(iter(locs))} <--[in_city/in_province]-- {co.name} [{co_uid}]"
+                    ),
+                }
+            )
 
         total_inferred = (
-            len(buyer_links) + len(sub_hints) + len(partnership_hints)
-            + len(industry_cluster_peers) + len(geo_cluster_peers)
+            len(buyer_links)
+            + len(sub_hints)
+            + len(partnership_hints)
+            + len(industry_cluster_peers)
+            + len(geo_cluster_peers)
         )
 
         return {
@@ -707,10 +710,13 @@ class RelationshipIntelligenceEngine:
 
         # Gather all tenders/projects uid participated in
         all_events = self._repo.get_neighbors(
-            uid, direction="both",
+            uid,
+            direction="both",
             kinds=[
-                BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID,
-                BizRelationKind.PARTICIPATED_IN, BizRelationKind.CONTRACTED_FOR,
+                BizRelationKind.AWARDED_TO,
+                BizRelationKind.SUBMITTED_BID,
+                BizRelationKind.PARTICIPATED_IN,
+                BizRelationKind.CONTRACTED_FOR,
                 BizRelationKind.APPLIED_FOR,
             ],
             limit=500,
@@ -720,9 +726,11 @@ class RelationshipIntelligenceEngine:
         co_counter: dict[str, list[str]] = defaultdict(list)
         for rel, event in all_events:
             for rel2, co in self._repo.get_neighbors(
-                event.uid, direction="both",
+                event.uid,
+                direction="both",
                 kinds=[
-                    BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID,
+                    BizRelationKind.AWARDED_TO,
+                    BizRelationKind.SUBMITTED_BID,
                     BizRelationKind.PARTICIPATED_IN,
                 ],
                 limit=100,
@@ -731,9 +739,7 @@ class RelationshipIntelligenceEngine:
                     co_counter[co.uid].append(event.name)
 
         partnerships: list[dict] = []
-        for co_uid, events in sorted(
-            co_counter.items(), key=lambda x: -len(x[1])
-        ):
+        for co_uid, events in sorted(co_counter.items(), key=lambda x: -len(x[1])):
             if len(events) < min_count:
                 continue
             co = self._repo.get(co_uid)
@@ -742,18 +748,20 @@ class RelationshipIntelligenceEngine:
             evs = [{"relation": BizRelationKind.AWARDED_TO.value}] * len(events)
             s = _strength_from_evidence(evs)
             c = _confidence_from_strength(s, len(events))
-            partnerships.append({
-                "uid": co_uid,
-                "name": co.name,
-                "co_event_count": len(events),
-                "events": list(dict.fromkeys(events))[:20],
-                "strength": s,
-                "confidence": c,
-                "evidence_path": (
-                    f"{entity.name} [{uid}] --[participated_in/awarded_to]--> "
-                    f"{events[0]} <--[participated_in/awarded_to]-- {co.name} [{co_uid}]"
-                ),
-            })
+            partnerships.append(
+                {
+                    "uid": co_uid,
+                    "name": co.name,
+                    "co_event_count": len(events),
+                    "events": list(dict.fromkeys(events))[:20],
+                    "strength": s,
+                    "confidence": c,
+                    "evidence_path": (
+                        f"{entity.name} [{uid}] --[participated_in/awarded_to]--> "
+                        f"{events[0]} <--[participated_in/awarded_to]-- {co.name} [{co_uid}]"
+                    ),
+                }
+            )
 
         return {
             "uid": uid,
@@ -773,38 +781,32 @@ class RelationshipIntelligenceEngine:
         ind = self._repo.get(industry_uid)
         if not ind:
             # Try name-based lookup
-            results = self._repo.find(
-                kind=BizEntityKind.INDUSTRY, name_like=industry_uid, limit=1
-            )
+            results = self._repo.find(kind=BizEntityKind.INDUSTRY, name_like=industry_uid, limit=1)
             if not results:
                 return {"error": f"Industry not found: {industry_uid}"}
             ind = results[0]
             industry_uid = ind.uid
 
         members = self._repo.get_neighbors(
-            industry_uid, direction="in",
-            kinds=[BizRelationKind.IN_INDUSTRY], limit=limit
+            industry_uid, direction="in", kinds=[BizRelationKind.IN_INDUSTRY], limit=limit
         )
 
         companies: list[dict] = []
         for rel, co in members:
             if co.kind != BizEntityKind.COMPANY:
                 continue
-            awarded = self._repo.get_neighbors(
-                co.uid, direction="out",
-                kinds=[BizRelationKind.AWARDED_TO], limit=200
-            )
+            awarded = self._repo.get_neighbors(co.uid, direction="out", kinds=[BizRelationKind.AWARDED_TO], limit=200)
             evs = [{"relation": BizRelationKind.AWARDED_TO.value} for _ in awarded]
             s = _strength_from_evidence(evs)
-            companies.append({
-                "uid": co.uid,
-                "name": co.name,
-                "tender_count": len(awarded),
-                "strength": s,
-                "evidence_path": (
-                    f"{co.name} [{co.uid}] --[in_industry]--> {ind.name} [{industry_uid}]"
-                ),
-            })
+            companies.append(
+                {
+                    "uid": co.uid,
+                    "name": co.name,
+                    "tender_count": len(awarded),
+                    "strength": s,
+                    "evidence_path": (f"{co.name} [{co.uid}] --[in_industry]--> {ind.name} [{industry_uid}]"),
+                }
+            )
 
         companies.sort(key=lambda x: -x["tender_count"])
 
@@ -836,23 +838,21 @@ class RelationshipIntelligenceEngine:
         is_city = loc_entity.kind == BizEntityKind.CITY
         rel_kind = BizRelationKind.IN_CITY if is_city else BizRelationKind.IN_PROVINCE
 
-        members = self._repo.get_neighbors(
-            loc_entity.uid, direction="in",
-            kinds=[rel_kind], limit=limit
-        )
+        members = self._repo.get_neighbors(loc_entity.uid, direction="in", kinds=[rel_kind], limit=limit)
 
         companies: list[dict] = []
         for rel, co in members:
             if co.kind != BizEntityKind.COMPANY:
                 continue
-            companies.append({
-                "uid": co.uid,
-                "name": co.name,
-                "evidence_path": (
-                    f"{co.name} [{co.uid}] --[{rel_kind.value}]--> "
-                    f"{loc_entity.name} [{loc_entity.uid}]"
-                ),
-            })
+            companies.append(
+                {
+                    "uid": co.uid,
+                    "name": co.name,
+                    "evidence_path": (
+                        f"{co.name} [{co.uid}] --[{rel_kind.value}]--> {loc_entity.name} [{loc_entity.uid}]"
+                    ),
+                }
+            )
 
         companies.sort(key=lambda x: x["name"])
 
@@ -880,8 +880,7 @@ class RelationshipIntelligenceEngine:
 
         # Tenders issued by this org
         issued_tenders = self._repo.get_neighbors(
-            org_uid, direction="in",
-            kinds=[BizRelationKind.ISSUED_BY], limit=limit
+            org_uid, direction="in", kinds=[BizRelationKind.ISSUED_BY], limit=limit
         )
 
         companies_seen: dict[str, dict] = {}
@@ -889,9 +888,10 @@ class RelationshipIntelligenceEngine:
 
         for rel, tender in issued_tenders:
             awarded = self._repo.get_neighbors(
-                tender.uid, direction="in",
+                tender.uid,
+                direction="in",
                 kinds=[BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID],
-                limit=100
+                limit=100,
             )
             val = tender.attributes.get("contract_value") or rel.attributes.get("contract_value")
             if val:
@@ -936,16 +936,17 @@ class RelationshipIntelligenceEngine:
 
     def _shared_buyers_impl(self, uid_a: str, uid_b: str) -> list[dict]:
         """Buyer organisations linked to both uid_a and uid_b via tenders."""
+
         def _buyer_orgs(uid: str) -> set[str]:
             orgs: set[str] = set()
             for rel, tender in self._repo.get_neighbors(
-                uid, direction="out",
+                uid,
+                direction="out",
                 kinds=[BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID],
                 limit=500,
             ):
                 for rel2, org in self._repo.get_neighbors(
-                    tender.uid, direction="out",
-                    kinds=[BizRelationKind.ISSUED_BY], limit=10
+                    tender.uid, direction="out", kinds=[BizRelationKind.ISSUED_BY], limit=10
                 ):
                     orgs.add(org.uid)
             return orgs
@@ -959,25 +960,33 @@ class RelationshipIntelligenceEngine:
             org = self._repo.get(org_uid)
             if not org:
                 continue
-            result.append({
-                "uid": org_uid,
-                "name": org.name,
-                "kind": org.kind.value,
-                "evidence_path": (
-                    f"{uid_a} --[awarded_to/submitted]--> tender --[issued_by]--> "
-                    f"{org.name} [{org_uid}] <--[issued_by]-- tender <--[awarded_to/submitted]-- {uid_b}"
-                ),
-            })
+            result.append(
+                {
+                    "uid": org_uid,
+                    "name": org.name,
+                    "kind": org.kind.value,
+                    "evidence_path": (
+                        f"{uid_a} --[awarded_to/submitted]--> tender --[issued_by]--> "
+                        f"{org.name} [{org_uid}] <--[issued_by]-- tender <--[awarded_to/submitted]-- {uid_b}"
+                    ),
+                }
+            )
         return result
 
     def _shared_competitors_impl(self, uid_a: str, uid_b: str) -> list[dict]:
         """Companies that competed on the same tenders as both uid_a and uid_b."""
+
         def _tender_uids(uid: str) -> set[str]:
             return {
-                nb.uid for rel, nb in self._repo.get_neighbors(
-                    uid, direction="out",
-                    kinds=[BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID,
-                           BizRelationKind.PARTICIPATED_IN],
+                nb.uid
+                for rel, nb in self._repo.get_neighbors(
+                    uid,
+                    direction="out",
+                    kinds=[
+                        BizRelationKind.AWARDED_TO,
+                        BizRelationKind.SUBMITTED_BID,
+                        BizRelationKind.PARTICIPATED_IN,
+                    ],
                     limit=500,
                 )
                 if nb.kind == BizEntityKind.TENDER
@@ -987,7 +996,8 @@ class RelationshipIntelligenceEngine:
             cos: set[str] = set()
             for t_uid in tender_uids:
                 for rel, co in self._repo.get_neighbors(
-                    t_uid, direction="in",
+                    t_uid,
+                    direction="in",
                     kinds=[BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID],
                     limit=100,
                 ):
@@ -1005,8 +1015,7 @@ class RelationshipIntelligenceEngine:
             comps_b = _companies_on_tenders(tenders_b, uid_b)
             shared_uids = comps_a & comps_b
         else:
-            shared_uids = _companies_on_tenders(shared_tenders, uid_a) | \
-                          _companies_on_tenders(shared_tenders, uid_b)
+            shared_uids = _companies_on_tenders(shared_tenders, uid_a) | _companies_on_tenders(shared_tenders, uid_b)
             shared_uids -= {uid_a, uid_b}
 
         result: list[dict] = []
@@ -1014,24 +1023,30 @@ class RelationshipIntelligenceEngine:
             co = self._repo.get(co_uid)
             if not co:
                 continue
-            result.append({
-                "uid": co_uid,
-                "name": co.name,
-                "evidence_path": (
-                    f"{uid_a} <--[awarded_to/submitted]-- tender "
-                    f"--[awarded_to/submitted]--> {co.name} [{co_uid}] "
-                    f"<--[awarded_to/submitted]-- tender --[awarded_to/submitted]--> {uid_b}"
-                ),
-            })
+            result.append(
+                {
+                    "uid": co_uid,
+                    "name": co.name,
+                    "evidence_path": (
+                        f"{uid_a} <--[awarded_to/submitted]-- tender "
+                        f"--[awarded_to/submitted]--> {co.name} [{co_uid}] "
+                        f"<--[awarded_to/submitted]-- tender --[awarded_to/submitted]--> {uid_b}"
+                    ),
+                }
+            )
         return result
 
     def _shared_industries(self, uid_a: str, uid_b: str) -> list[dict]:
         """Industry nodes shared by both entities."""
+
         def _ind_uids(uid: str) -> set[str]:
             return {
-                nb.uid for rel, nb in self._repo.get_neighbors(
-                    uid, direction="out",
-                    kinds=[BizRelationKind.IN_INDUSTRY], limit=50,
+                nb.uid
+                for rel, nb in self._repo.get_neighbors(
+                    uid,
+                    direction="out",
+                    kinds=[BizRelationKind.IN_INDUSTRY],
+                    limit=50,
                 )
             }
 
@@ -1045,10 +1060,13 @@ class RelationshipIntelligenceEngine:
 
     def _shared_locations(self, uid_a: str, uid_b: str) -> list[dict]:
         """City / province nodes shared by both entities."""
+
         def _loc_uids(uid: str) -> set[str]:
             return {
-                nb.uid for rel, nb in self._repo.get_neighbors(
-                    uid, direction="out",
+                nb.uid
+                for rel, nb in self._repo.get_neighbors(
+                    uid,
+                    direction="out",
                     kinds=[BizRelationKind.IN_CITY, BizRelationKind.IN_PROVINCE],
                     limit=20,
                 )
@@ -1064,13 +1082,18 @@ class RelationshipIntelligenceEngine:
 
     def _recurring_co_appearances(self, uid_a: str, uid_b: str) -> list[dict]:
         """Tenders/permits/projects where both uid_a and uid_b appear."""
+
         def _event_uids(uid: str) -> set[str]:
             return {
-                nb.uid for rel, nb in self._repo.get_neighbors(
-                    uid, direction="both",
+                nb.uid
+                for rel, nb in self._repo.get_neighbors(
+                    uid,
+                    direction="both",
                     kinds=[
-                        BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID,
-                        BizRelationKind.PARTICIPATED_IN, BizRelationKind.APPLIED_FOR,
+                        BizRelationKind.AWARDED_TO,
+                        BizRelationKind.SUBMITTED_BID,
+                        BizRelationKind.PARTICIPATED_IN,
+                        BizRelationKind.APPLIED_FOR,
                         BizRelationKind.CONTRACTED_FOR,
                     ],
                     limit=500,
@@ -1108,9 +1131,7 @@ class RelationshipIntelligenceEngine:
             current_uid, path = queue.popleft()
             if len(path) > max_depth + 1:
                 break
-            neighbours = self._repo.get_neighbors(
-                current_uid, direction="both", limit=200
-            )
+            neighbours = self._repo.get_neighbors(current_uid, direction="both", limit=200)
             for rel, nb in neighbours:
                 hop = {
                     "uid": nb.uid,
@@ -1140,9 +1161,13 @@ class RelationshipIntelligenceEngine:
             return
         visited.add(uid)
         neighbours = self._repo.get_neighbors(
-            uid, direction="both",
-            kinds=[BizRelationKind.PARTICIPATED_IN, BizRelationKind.WORKS_WITH,
-                   BizRelationKind.CONTRACTED_FOR],
+            uid,
+            direction="both",
+            kinds=[
+                BizRelationKind.PARTICIPATED_IN,
+                BizRelationKind.WORKS_WITH,
+                BizRelationKind.CONTRACTED_FOR,
+            ],
             limit=50,
         )
         for rel, nb in neighbours:
@@ -1150,13 +1175,13 @@ class RelationshipIntelligenceEngine:
                 continue
             new_chain = chain + [{"uid": nb.uid, "name": nb.name, "via": rel.kind.value}]
             if len(new_chain) >= 2:
-                result.append({
-                    "chain": new_chain,
-                    "length": len(new_chain),
-                    "evidence_path": " → ".join(
-                        f"{h['name']} [{h['uid']}]" for h in new_chain
-                    ),
-                })
+                result.append(
+                    {
+                        "chain": new_chain,
+                        "length": len(new_chain),
+                        "evidence_path": " → ".join(f"{h['name']} [{h['uid']}]" for h in new_chain),
+                    }
+                )
             self._traverse_subcontractor(nb.uid, nb.name, new_chain, result, depth - 1, visited)
 
     @staticmethod
@@ -1178,40 +1203,29 @@ class RelationshipIntelligenceEngine:
             parts.append(f"They are directly linked via: {kinds}.")
 
         if co_appear:
-            parts.append(
-                f"They co-appear in {len(co_appear)} shared tender(s)/event(s)."
-            )
+            parts.append(f"They co-appear in {len(co_appear)} shared tender(s)/event(s).")
 
         if buyers:
             bnames = ", ".join(b["name"] for b in buyers[:3])
-            more = f" (+{len(buyers)-3} more)" if len(buyers) > 3 else ""
-            parts.append(
-                f"They share {len(buyers)} common buyer(s): {bnames}{more}."
-            )
+            more = f" (+{len(buyers) - 3} more)" if len(buyers) > 3 else ""
+            parts.append(f"They share {len(buyers)} common buyer(s): {bnames}{more}.")
 
         if industries:
             inames = ", ".join(i["name"] for i in industries[:3])
             parts.append(f"Both operate in: {inames}.")
 
         if locations:
-            lnames = ", ".join(l["name"] for l in locations[:3])
+            lnames = ", ".join(loc["name"] for loc in locations[:3])
             parts.append(f"Both are located in: {lnames}.")
 
         if competitors:
-            parts.append(
-                f"They face {len(competitors)} common competitor(s)."
-            )
+            parts.append(f"They face {len(competitors)} common competitor(s).")
 
         if path and not direct:
-            parts.append(
-                f"Shortest graph path: {len(path) - 1} hop(s) — {_path_str(path)}."
-            )
+            parts.append(f"Shortest graph path: {len(path) - 1} hop(s) — {_path_str(path)}.")
 
         if not parts:
-            parts.append(
-                f"No direct or indirect connection found between {name_a} and {name_b} "
-                "in the current graph."
-            )
+            parts.append(f"No direct or indirect connection found between {name_a} and {name_b} in the current graph.")
         else:
             parts.insert(0, f"{name_a} and {name_b} are connected because:")
 

@@ -1,20 +1,18 @@
 """
 Tests for the importer framework: CSVImporter, JSONImporter, TenderScopeImporter.
 """
+
 from __future__ import annotations
 
 import csv
 import json
 import sqlite3
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from tenderscope_kg.domain import BizEntityKind, BizRelationKind
-from tenderscope_kg.repository._base import BizRepository
-from tenderscope_kg.repository._sqlite import BizRepositorySQLite
+from tenderscope_kg.domain import BizEntityKind
 from tenderscope_kg.importers import CSVImporter, JSONImporter, TenderScopeImporter
+from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 
 
 @pytest.fixture
@@ -27,6 +25,7 @@ def repo():
 
 
 # ── CSVImporter ───────────────────────────────────────────────────────────────
+
 
 def test_csv_import_basic(repo, tmp_path):
     p = tmp_path / "companies.csv"
@@ -60,9 +59,7 @@ def test_csv_import_with_relations(repo, tmp_path):
     schema = {
         "entity_kind": "company",
         "name_column": "company_name",
-        "relation_columns": [
-            {"column": "parent", "relation_kind": "subsidiary_of", "target_kind": "company"}
-        ],
+        "relation_columns": [{"column": "parent", "relation_kind": "subsidiary_of", "target_kind": "company"}],
     }
     result = CSVImporter(repo, str(p), schema=schema).run()
     assert result.entities_created == 2  # SubCo + Acme Corp
@@ -84,10 +81,11 @@ def test_csv_import_missing_schema_keys(repo, tmp_path):
 
 # ── JSONImporter ──────────────────────────────────────────────────────────────
 
+
 def test_json_import_array(repo, tmp_path):
     data = [
         {"kind": "company", "name": "Acme Corp", "city": "Vancouver"},
-        {"kind": "tender",  "name": "Park Renovation 2025"},
+        {"kind": "tender", "name": "Park Renovation 2025"},
     ]
     p = tmp_path / "data.json"
     p.write_text(json.dumps(data))
@@ -100,12 +98,14 @@ def test_json_import_envelope_with_relations(repo, tmp_path):
     data = {
         "entities": [
             {"kind": "company", "name": "Acme Corp"},
-            {"kind": "tender",  "name": "Park Renovation"},
+            {"kind": "tender", "name": "Park Renovation"},
         ],
         "relations": [
             {
-                "source_kind": "company", "source_name": "Acme Corp",
-                "target_kind": "tender",  "target_name": "Park Renovation",
+                "source_kind": "company",
+                "source_name": "Acme Corp",
+                "target_kind": "tender",
+                "target_name": "Park Renovation",
                 "kind": "submitted_bid",
             }
         ],
@@ -135,11 +135,12 @@ def test_json_import_missing_file(repo):
 
 # ── TenderScopeImporter ───────────────────────────────────────────────────────
 
+
 def test_tenderscope_import_tenders(repo, tmp_path):
     p = tmp_path / "tenders.csv"
     rows = [
         {"tender_title": "Bridge Repair", "region": "Metro Vancouver", "closing_at": "2025-12-01"},
-        {"tender_title": "Road Paving",   "region": "Fraser Valley",   "closing_at": "2025-11-15"},
+        {"tender_title": "Road Paving", "region": "Fraser Valley", "closing_at": "2025-11-15"},
     ]
     with open(p, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -156,7 +157,7 @@ def test_tenderscope_import_companies(repo, tmp_path):
     p = tmp_path / "companies.csv"
     rows = [
         {"company_name": "Acme Corp", "city": "Vancouver", "province": "BC"},
-        {"company_name": "BuildCo",   "city": "Victoria",  "province": "BC"},
+        {"company_name": "BuildCo", "city": "Victoria", "province": "BC"},
     ]
     with open(p, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -172,14 +173,14 @@ def test_tenderscope_import_awards(repo, tmp_path):
     p = tmp_path / "awards.csv"
     rows = [
         {"vendor_name": "Acme Corp", "tender_title": "Bridge Repair", "contract_value": "250000"},
-        {"vendor_name": "BuildCo",   "tender_title": "Road Paving",   "contract_value": "180000"},
+        {"vendor_name": "BuildCo", "tender_title": "Road Paving", "contract_value": "180000"},
     ]
     with open(p, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
     result = TenderScopeImporter(repo, str(p), source_tag="test").run()
-    assert result.entities_created >= 4   # 2 companies + 2 tenders
+    assert result.entities_created >= 4  # 2 companies + 2 tenders
     assert result.relations_created >= 4  # awarded_to + awarded_by for each
 
 

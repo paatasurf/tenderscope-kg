@@ -40,6 +40,7 @@ Graph traversal
   companies_by_province(prov)  → all companies in a province
   most_connected_companies(n)  → companies ranked by total edge count
 """
+
 from __future__ import annotations
 
 import re
@@ -49,8 +50,8 @@ from typing import Any, Optional
 from .domain import BizEntity, BizEntityKind, BizRelationKind
 from .repository._base import BizRepository
 
-
 # ── helpers ────────────────────────────────────────────────────────────────────
+
 
 def _parse_value(raw: Any) -> Optional[float]:
     """Parse 'CAD 273,936.60' or 500000.0 → float, else None."""
@@ -80,6 +81,7 @@ def _date_key(d: Optional[str]) -> str:
 
 
 # ── main class ─────────────────────────────────────────────────────────────────
+
 
 class CompanyIntelligenceEngine:
     """
@@ -116,15 +118,15 @@ class CompanyIntelligenceEngine:
             "updated_at": ent.updated_at,
             "attributes": ent.attributes,
             # Sub-profiles (all evidence-backed)
-            "summary":     self.company_summary(uid),
-            "stats":       self.company_stats(uid),
-            "buyers":      self.company_buyers(uid),
+            "summary": self.company_summary(uid),
+            "stats": self.company_stats(uid),
+            "buyers": self.company_buyers(uid),
             "competitors": self.company_competitors(uid),
-            "contracts":   self.company_contracts(uid),
-            "tenders":     self.company_tenders(uid),
-            "timeline":    self.company_timeline(uid),
-            "locations":   self.company_locations(uid),
-            "industries":  self.company_industries(uid),
+            "contracts": self.company_contracts(uid),
+            "tenders": self.company_tenders(uid),
+            "timeline": self.company_timeline(uid),
+            "locations": self.company_locations(uid),
+            "industries": self.company_industries(uid),
         }
 
     def company_summary(self, uid: str) -> dict:
@@ -172,9 +174,11 @@ class CompanyIntelligenceEngine:
         total_value = 0.0
         values = []
         for nb in awarded_tenders:
-            v = _parse_value(nb.attributes.get("contract_value") or
-                             nb.attributes.get("estimated_value") or
-                             nb.attributes.get("project_value"))
+            v = _parse_value(
+                nb.attributes.get("contract_value")
+                or nb.attributes.get("estimated_value")
+                or nb.attributes.get("project_value")
+            )
             if v:
                 total_value += v
                 values.append(v)
@@ -224,11 +228,12 @@ class CompanyIntelligenceEngine:
         check = self._require_company(uid)
         if "error" in check:
             return check
-        ent: BizEntity = check["_entity"]
+        check["_entity"]
 
         # Fetch all outbound + inbound contract/permit relations
         award_rels = self.repo.get_neighbors(
-            uid, direction="out",
+            uid,
+            direction="out",
             kinds=[
                 BizRelationKind.AWARDED_TO,
                 BizRelationKind.APPLIED_FOR,
@@ -250,22 +255,17 @@ class CompanyIntelligenceEngine:
             evidence.append(ev)
             if nb.kind == BizEntityKind.TENDER:
                 v = _parse_value(
-                    rel.attributes.get("contract_value") or
-                    nb.attributes.get("contract_value") or
-                    nb.attributes.get("estimated_value")
+                    rel.attributes.get("contract_value")
+                    or nb.attributes.get("contract_value")
+                    or nb.attributes.get("estimated_value")
                 )
                 if v:
                     contract_values.append(v)
-                d = (
-                    rel.attributes.get("award_date") or
-                    nb.attributes.get("award_date") or
-                    rel.valid_from
-                )
+                d = rel.attributes.get("award_date") or nb.attributes.get("award_date") or rel.valid_from
                 if d:
                     award_dates.append(d)
             elif nb.kind == BizEntityKind.PERMIT:
-                v = _parse_value(nb.attributes.get("project_value_numeric") or
-                                 nb.attributes.get("project_value"))
+                v = _parse_value(nb.attributes.get("project_value_numeric") or nb.attributes.get("project_value"))
                 if v:
                     permit_values.append(v)
                 d = nb.attributes.get("issue_date") or nb.attributes.get("application_date")
@@ -273,8 +273,14 @@ class CompanyIntelligenceEngine:
                     permit_dates.append(d)
 
         # Yearly breakdown
-        yearly: dict[str, dict] = defaultdict(lambda: {"contract_count": 0, "contract_value": 0.0,
-                                                         "permit_count": 0, "permit_value": 0.0})
+        yearly: dict[str, dict] = defaultdict(
+            lambda: {
+                "contract_count": 0,
+                "contract_value": 0.0,
+                "permit_count": 0,
+                "permit_value": 0.0,
+            }
+        )
         for rel, nb in award_rels:
             if nb.kind == BizEntityKind.TENDER:
                 d = rel.attributes.get("award_date") or nb.attributes.get("award_date") or rel.valid_from
@@ -331,7 +337,8 @@ class CompanyIntelligenceEngine:
 
         # Step 1: collect tenders the company is connected to
         tender_rels = self.repo.get_neighbors(
-            uid, direction="out",
+            uid,
+            direction="out",
             kinds=[BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID],
             limit=500,
         )
@@ -341,7 +348,8 @@ class CompanyIntelligenceEngine:
         buyer_map: dict[str, dict] = {}  # org_uid → {org, tenders}
         for tender_uid, tender in tender_uids.items():
             org_rels = self.repo.get_neighbors(
-                tender_uid, direction="out",
+                tender_uid,
+                direction="out",
                 kinds=[BizRelationKind.ISSUED_BY],
                 limit=10,
             )
@@ -354,15 +362,18 @@ class CompanyIntelligenceEngine:
                             "kind": org.kind.value,
                             "tenders": [],
                         }
-                    buyer_map[org.uid]["tenders"].append({
-                        "uid": tender.uid,
-                        "name": tender.name,
-                        "evidence_path": f"{uid} → awarded_to → {tender_uid} → issued_by → {org.uid}",
-                    })
+                    buyer_map[org.uid]["tenders"].append(
+                        {
+                            "uid": tender.uid,
+                            "name": tender.name,
+                            "evidence_path": f"{uid} → awarded_to → {tender_uid} → issued_by → {org.uid}",
+                        }
+                    )
 
         # Step 3: also check direct AWARDED_BY relations
         direct_buyers = self.repo.get_neighbors(
-            uid, direction="in",
+            uid,
+            direction="in",
             kinds=[BizRelationKind.AWARDED_BY, BizRelationKind.ISSUES],
             limit=200,
         )
@@ -396,7 +407,8 @@ class CompanyIntelligenceEngine:
 
         # Collect company's tenders
         tender_rels = self.repo.get_neighbors(
-            uid, direction="out",
+            uid,
+            direction="out",
             kinds=[BizRelationKind.AWARDED_TO, BizRelationKind.SUBMITTED_BID],
             limit=500,
         )
@@ -406,7 +418,8 @@ class CompanyIntelligenceEngine:
         buyer_uids: set[str] = set()
         for tender_uid in my_tender_uids:
             org_rels = self.repo.get_neighbors(
-                tender_uid, direction="out",
+                tender_uid,
+                direction="out",
                 kinds=[BizRelationKind.ISSUED_BY],
                 limit=10,
             )
@@ -417,7 +430,8 @@ class CompanyIntelligenceEngine:
         competitor_evidence: dict[str, dict] = {}  # company_uid → {name, shared_tenders, shared_buyers}
         for tender_uid in my_tender_uids:
             co_rels = self.repo.get_neighbors(
-                tender_uid, direction="in",
+                tender_uid,
+                direction="in",
                 kinds=[BizRelationKind.AWARDED_TO],
                 limit=50,
             )
@@ -432,23 +446,27 @@ class CompanyIntelligenceEngine:
                             "shared_buyers": [],
                         }
                     tender_ent = self.repo.get(tender_uid)
-                    competitor_evidence[co.uid]["shared_tenders"].append({
-                        "uid": tender_uid,
-                        "name": tender_ent.name if tender_ent else tender_uid,
-                        "evidence_path": f"{co.uid} → awarded_to → {tender_uid} ← awarded_to ← {uid}",
-                    })
+                    competitor_evidence[co.uid]["shared_tenders"].append(
+                        {
+                            "uid": tender_uid,
+                            "name": tender_ent.name if tender_ent else tender_uid,
+                            "evidence_path": f"{co.uid} → awarded_to → {tender_uid} ← awarded_to ← {uid}",
+                        }
+                    )
 
         # For each buyer, find other companies that issued_by the same org
         for buyer_uid in buyer_uids:
             issued_rels = self.repo.get_neighbors(
-                buyer_uid, direction="out",
+                buyer_uid,
+                direction="out",
                 kinds=[BizRelationKind.ISSUES],
                 limit=100,
             )
             issued_tender_uids = {nb.uid for _, nb in issued_rels if nb.kind == BizEntityKind.TENDER}
             for t_uid in issued_tender_uids:
                 co_rels = self.repo.get_neighbors(
-                    t_uid, direction="in",
+                    t_uid,
+                    direction="in",
                     kinds=[BizRelationKind.AWARDED_TO],
                     limit=50,
                 )
@@ -464,19 +482,20 @@ class CompanyIntelligenceEngine:
                             }
                         buyer_ent = self.repo.get(buyer_uid)
                         bname = buyer_ent.name if buyer_ent else buyer_uid
-                        already = any(b.get("uid") == buyer_uid
-                                      for b in competitor_evidence[co.uid]["shared_buyers"])
+                        already = any(b.get("uid") == buyer_uid for b in competitor_evidence[co.uid]["shared_buyers"])
                         if not already:
-                            competitor_evidence[co.uid]["shared_buyers"].append({
-                                "uid": buyer_uid,
-                                "name": bname,
-                                "evidence_path": f"{uid} ← issued_by ← {bname} → issues → tender → {co.uid}",
-                            })
+                            competitor_evidence[co.uid]["shared_buyers"].append(
+                                {
+                                    "uid": buyer_uid,
+                                    "name": bname,
+                                    "evidence_path": f"{uid} ← issued_by ← {bname} → issues → tender → {co.uid}",
+                                }
+                            )
 
         # Sort by total shared evidence
         ranked = sorted(
             competitor_evidence.values(),
-            key=lambda c: -(len(c["shared_tenders"]) + len(c["shared_buyers"]))
+            key=lambda c: -(len(c["shared_tenders"]) + len(c["shared_buyers"])),
         )[:limit]
 
         for comp in ranked:
@@ -503,7 +522,8 @@ class CompanyIntelligenceEngine:
         ent: BizEntity = check["_entity"]
 
         award_rels = self.repo.get_neighbors(
-            uid, direction="out",
+            uid,
+            direction="out",
             kinds=[
                 BizRelationKind.AWARDED_TO,
                 BizRelationKind.HAS_CONTRACT,
@@ -517,24 +537,26 @@ class CompanyIntelligenceEngine:
             if nb.kind not in (BizEntityKind.TENDER, BizEntityKind.CONTRACT):
                 continue
             v = _parse_value(
-                rel.attributes.get("contract_value") or
-                nb.attributes.get("contract_value") or
-                nb.attributes.get("estimated_value")
+                rel.attributes.get("contract_value")
+                or nb.attributes.get("contract_value")
+                or nb.attributes.get("estimated_value")
             )
             if v:
                 total += v
-            contracts.append({
-                "uid": nb.uid,
-                "name": nb.name,
-                "entity_kind": nb.kind.value,
-                "relation": rel.kind.value,
-                "contract_value": v,
-                "award_date": rel.attributes.get("award_date") or nb.attributes.get("award_date") or rel.valid_from,
-                "url": nb.attributes.get("url"),
-                "source": rel.source,
-                "confidence": rel.confidence,
-                "evidence_path": f"{uid} → {rel.kind.value} → {nb.uid}",
-            })
+            contracts.append(
+                {
+                    "uid": nb.uid,
+                    "name": nb.name,
+                    "entity_kind": nb.kind.value,
+                    "relation": rel.kind.value,
+                    "contract_value": v,
+                    "award_date": rel.attributes.get("award_date") or nb.attributes.get("award_date") or rel.valid_from,
+                    "url": nb.attributes.get("url"),
+                    "source": rel.source,
+                    "confidence": rel.confidence,
+                    "evidence_path": f"{uid} → {rel.kind.value} → {nb.uid}",
+                }
+            )
 
         contracts.sort(key=lambda c: -(c.get("contract_value") or 0))
 
@@ -559,7 +581,8 @@ class CompanyIntelligenceEngine:
         ent: BizEntity = check["_entity"]
 
         all_rels = self.repo.get_neighbors(
-            uid, direction="both",
+            uid,
+            direction="both",
             kinds=[
                 BizRelationKind.AWARDED_TO,
                 BizRelationKind.SUBMITTED_BID,
@@ -583,8 +606,7 @@ class CompanyIntelligenceEngine:
                 "closing_date": nb.attributes.get("closing_date"),
                 "award_date": nb.attributes.get("award_date") or rel.attributes.get("award_date"),
                 "contract_value": _parse_value(
-                    nb.attributes.get("contract_value") or
-                    rel.attributes.get("contract_value")
+                    nb.attributes.get("contract_value") or rel.attributes.get("contract_value")
                 ),
                 "url": nb.attributes.get("url"),
                 "source": rel.source,
@@ -624,32 +646,35 @@ class CompanyIntelligenceEngine:
             if rel.valid_from:
                 date = rel.valid_from
             elif nb.kind == BizEntityKind.TENDER:
-                date = (nb.attributes.get("award_date") or
-                        nb.attributes.get("closing_date") or
-                        nb.attributes.get("posted_date"))
+                date = (
+                    nb.attributes.get("award_date")
+                    or nb.attributes.get("closing_date")
+                    or nb.attributes.get("posted_date")
+                )
             elif nb.kind == BizEntityKind.PERMIT:
-                date = (nb.attributes.get("issue_date") or
-                        nb.attributes.get("application_date"))
+                date = nb.attributes.get("issue_date") or nb.attributes.get("application_date")
             elif nb.kind == BizEntityKind.CONTRACT:
                 date = nb.attributes.get("date") or nb.attributes.get("award_date")
 
             if not date:
                 continue  # Skip undated events from timeline
 
-            events.append({
-                "date": date[:10] if len(date) >= 10 else date,
-                "event_type": rel.kind.value,
-                "counterpart_uid": nb.uid,
-                "counterpart_name": nb.name,
-                "counterpart_kind": nb.kind.value,
-                "value": _parse_value(
-                    rel.attributes.get("contract_value") or
-                    nb.attributes.get("contract_value") or
-                    nb.attributes.get("project_value_numeric")
-                ),
-                "source": rel.source,
-                "evidence_path": f"{uid} ↔ {rel.kind.value} ↔ {nb.uid}",
-            })
+            events.append(
+                {
+                    "date": date[:10] if len(date) >= 10 else date,
+                    "event_type": rel.kind.value,
+                    "counterpart_uid": nb.uid,
+                    "counterpart_name": nb.name,
+                    "counterpart_kind": nb.kind.value,
+                    "value": _parse_value(
+                        rel.attributes.get("contract_value")
+                        or nb.attributes.get("contract_value")
+                        or nb.attributes.get("project_value_numeric")
+                    ),
+                    "source": rel.source,
+                    "evidence_path": f"{uid} ↔ {rel.kind.value} ↔ {nb.uid}",
+                }
+            )
 
         events.sort(key=lambda e: e["date"])
 
@@ -679,7 +704,8 @@ class CompanyIntelligenceEngine:
         ent: BizEntity = check["_entity"]
 
         loc_rels = self.repo.get_neighbors(
-            uid, direction="out",
+            uid,
+            direction="out",
             kinds=[
                 BizRelationKind.IN_CITY,
                 BizRelationKind.IN_PROVINCE,
@@ -711,7 +737,11 @@ class CompanyIntelligenceEngine:
         # Also pull from attributes
         attr_city = ent.attributes.get("city") or ent.attributes.get("primary_city")
         attr_province = ent.attributes.get("province") or ent.attributes.get("primary_province")
-        attr_address = ent.attributes.get("address") or ent.attributes.get("google_address") or ent.attributes.get("primary_address")
+        attr_address = (
+            ent.attributes.get("address")
+            or ent.attributes.get("google_address")
+            or ent.attributes.get("primary_address")
+        )
 
         return {
             "uid": uid,
@@ -736,25 +766,29 @@ class CompanyIntelligenceEngine:
 
         # Direct industry relations
         ind_rels = self.repo.get_neighbors(
-            uid, direction="out",
+            uid,
+            direction="out",
             kinds=[BizRelationKind.IN_INDUSTRY, BizRelationKind.HAS_NAICS],
             limit=50,
         )
 
         industries: list[dict] = []
         for rel, nb in ind_rels:
-            industries.append({
-                "uid": nb.uid,
-                "name": nb.name,
-                "kind": nb.kind.value,
-                "relation": rel.kind.value,
-                "source": rel.source,
-                "evidence_path": f"{uid} → {rel.kind.value} → {nb.uid}",
-            })
+            industries.append(
+                {
+                    "uid": nb.uid,
+                    "name": nb.name,
+                    "kind": nb.kind.value,
+                    "relation": rel.kind.value,
+                    "source": rel.source,
+                    "evidence_path": f"{uid} → {rel.kind.value} → {nb.uid}",
+                }
+            )
 
         # Infer industries from won tenders
         tender_rels = self.repo.get_neighbors(
-            uid, direction="out",
+            uid,
+            direction="out",
             kinds=[BizRelationKind.AWARDED_TO],
             limit=200,
         )
@@ -798,7 +832,8 @@ class CompanyIntelligenceEngine:
         company_buyers: dict[str, set[str]] = {}
         for co in companies:
             tender_rels = self.repo.get_neighbors(
-                co.uid, direction="out",
+                co.uid,
+                direction="out",
                 kinds=[BizRelationKind.AWARDED_TO],
                 limit=200,
             )
@@ -807,7 +842,8 @@ class CompanyIntelligenceEngine:
                 if tender.kind != BizEntityKind.TENDER:
                     continue
                 org_rels = self.repo.get_neighbors(
-                    tender.uid, direction="out",
+                    tender.uid,
+                    direction="out",
                     kinds=[BizRelationKind.ISSUED_BY],
                     limit=10,
                 )
@@ -817,16 +853,12 @@ class CompanyIntelligenceEngine:
 
         # Count unique buyers per company (proxy for market breadth)
         ranked = sorted(
-            [(co.uid, co.name, len(bset)) for co, bset in
-             zip(companies, [company_buyers[c.uid] for c in companies])],
-            key=lambda x: -x[2]
+            [(co.uid, co.name, len(bset)) for co, bset in zip(companies, [company_buyers[c.uid] for c in companies])],
+            key=lambda x: -x[2],
         )[:limit]
 
         return {
-            "top_competitors": [
-                {"uid": uid, "name": name, "buyer_count": count}
-                for uid, name, count in ranked
-            ],
+            "top_competitors": [{"uid": uid, "name": name, "buyer_count": count} for uid, name, count in ranked],
             "count": len(ranked),
         }
 
@@ -840,20 +872,23 @@ class CompanyIntelligenceEngine:
         results: list[dict] = []
         for city_ent in cities:
             in_city = self.repo.get_neighbors(
-                city_ent.uid, direction="in",
+                city_ent.uid,
+                direction="in",
                 kinds=[BizRelationKind.IN_CITY],
                 limit=limit,
             )
             for rel, co in in_city:
                 if co.kind == BizEntityKind.COMPANY:
-                    results.append({
-                        "uid": co.uid,
-                        "name": co.name,
-                        "source": co.source,
-                        "city_uid": city_ent.uid,
-                        "city_name": city_ent.name,
-                        "evidence_path": f"{co.uid} → in_city → {city_ent.uid}",
-                    })
+                    results.append(
+                        {
+                            "uid": co.uid,
+                            "name": co.name,
+                            "source": co.source,
+                            "city_uid": city_ent.uid,
+                            "city_name": city_ent.name,
+                            "evidence_path": f"{co.uid} → in_city → {city_ent.uid}",
+                        }
+                    )
 
         return {"city": city, "companies": results, "count": len(results)}
 
@@ -861,25 +896,33 @@ class CompanyIntelligenceEngine:
         """All companies in the given province."""
         provs = self.repo.find(kind=BizEntityKind.PROVINCE, name_like=province, limit=5)
         if not provs:
-            return {"province": province, "companies": [], "count": 0, "error": "Province not found in graph"}
+            return {
+                "province": province,
+                "companies": [],
+                "count": 0,
+                "error": "Province not found in graph",
+            }
 
         results: list[dict] = []
         for prov_ent in provs:
             in_prov = self.repo.get_neighbors(
-                prov_ent.uid, direction="in",
+                prov_ent.uid,
+                direction="in",
                 kinds=[BizRelationKind.IN_PROVINCE],
                 limit=limit,
             )
             for rel, co in in_prov:
                 if co.kind == BizEntityKind.COMPANY:
-                    results.append({
-                        "uid": co.uid,
-                        "name": co.name,
-                        "source": co.source,
-                        "province_uid": prov_ent.uid,
-                        "province_name": prov_ent.name,
-                        "evidence_path": f"{co.uid} → in_province → {prov_ent.uid}",
-                    })
+                    results.append(
+                        {
+                            "uid": co.uid,
+                            "name": co.name,
+                            "source": co.source,
+                            "province_uid": prov_ent.uid,
+                            "province_name": prov_ent.name,
+                            "evidence_path": f"{co.uid} → in_province → {prov_ent.uid}",
+                        }
+                    )
 
         return {"province": province, "companies": results, "count": len(results)}
 
@@ -893,13 +936,15 @@ class CompanyIntelligenceEngine:
         for co in companies:
             out_edges = len(self.repo.get_neighbors(co.uid, direction="out", limit=10000))
             in_edges = len(self.repo.get_neighbors(co.uid, direction="in", limit=10000))
-            ranked.append({
-                "uid": co.uid,
-                "name": co.name,
-                "out_edges": out_edges,
-                "in_edges": in_edges,
-                "total_edges": out_edges + in_edges,
-            })
+            ranked.append(
+                {
+                    "uid": co.uid,
+                    "name": co.name,
+                    "out_edges": out_edges,
+                    "in_edges": in_edges,
+                    "total_edges": out_edges + in_edges,
+                }
+            )
         ranked.sort(key=lambda x: -x["total_edges"])
         ranked = ranked[:limit]
         return {"companies": ranked, "count": len(ranked)}

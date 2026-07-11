@@ -2,6 +2,7 @@
 MCP server exposing Knowledge Graph tools to AI coding agents.
 Run with:  tkg-mcp --repo /path/to/repo
 """
+
 from __future__ import annotations
 
 import json
@@ -22,17 +23,10 @@ from mcp.types import (
 )
 
 from .db import GraphDB
+from .importers import CSVImporter, JSONImporter, TenderScopeImporter
 from .indexer import Indexer
 from .query_engine import QueryEngine
-from .biz_query_engine import BizQueryEngine
 from .repository import open_repository
-from .company_intelligence import CompanyIntelligenceEngine
-from .relationship_intelligence import RelationshipIntelligenceEngine
-from .competitive_intelligence import CompetitiveIntelligenceEngine
-from .buyer_intelligence import BuyerIntelligenceEngine
-from .opportunity_intelligence import OpportunityIntelligenceEngine
-from .executive_decision import ExecutiveDecisionEngine
-from .importers import CSVImporter, JSONImporter, TenderScopeImporter
 from .server_engines import EngineSet, build_engines
 
 _TOOLS: list[Tool] = [
@@ -51,7 +45,7 @@ _TOOLS: list[Tool] = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Optional filter: file, module, class, function, method, "
-                                   "sql_table, api_route, config_key, interface, type_alias",
+                    "sql_table, api_route, config_key, interface, type_alias",
                 },
                 "limit": {"type": "integer", "default": 20},
             },
@@ -547,8 +541,7 @@ _TOOLS: list[Tool] = [
     Tool(
         name="cie_locations",
         description=(
-            "All cities, provinces, and addresses associated with a company, "
-            "each with evidence path to the graph edge."
+            "All cities, provinces, and addresses associated with a company, each with evidence path to the graph edge."
         ),
         inputSchema={
             "type": "object",
@@ -723,10 +716,7 @@ _TOOLS: list[Tool] = [
     ),
     Tool(
         name="rie_geo_cluster",
-        description=(
-            "All companies in a geographic cluster (city or province). "
-            "Pass a city/province UID or name."
-        ),
+        description=("All companies in a geographic cluster (city or province). Pass a city/province UID or name."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -826,8 +816,7 @@ _TOOLS: list[Tool] = [
     Tool(
         name="cei_co_bidders",
         description=(
-            "Companies that frequently bid alongside this company on the "
-            "same tenders, ranked by co-bid count."
+            "Companies that frequently bid alongside this company on the same tenders, ranked by co-bid count."
         ),
         inputSchema={
             "type": "object",
@@ -878,7 +867,11 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "scope_uid": {"type": "string"},
-                "by": {"type": "string", "enum": ["company", "year", "buyer", "city", "province", "industry"], "default": "company"},
+                "by": {
+                    "type": "string",
+                    "enum": ["company", "year", "buyer", "city", "province", "industry"],
+                    "default": "company",
+                },
                 "limit": {"type": "integer", "default": 50},
             },
             "required": ["scope_uid"],
@@ -894,7 +887,11 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "scope_uid": {"type": "string"},
-                "by": {"type": "string", "enum": ["wins", "bids", "win_rate", "market_share"], "default": "wins"},
+                "by": {
+                    "type": "string",
+                    "enum": ["wins", "bids", "win_rate", "market_share"],
+                    "default": "wins",
+                },
                 "limit": {"type": "integer", "default": 30},
             },
             "required": ["scope_uid"],
@@ -925,7 +922,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "tender_uid":  {"type": "string"},
+                "tender_uid": {"type": "string"},
             },
             "required": ["company_uid", "tender_uid"],
         },
@@ -942,7 +939,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "tender_uid":  {"type": "string"},
+                "tender_uid": {"type": "string"},
             },
             "required": ["company_uid", "tender_uid"],
         },
@@ -958,7 +955,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "tender_uid":  {"type": "string"},
+                "tender_uid": {"type": "string"},
             },
             "required": ["company_uid", "tender_uid"],
         },
@@ -974,7 +971,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "tender_uid":  {"type": "string"},
+                "tender_uid": {"type": "string"},
             },
             "required": ["company_uid", "tender_uid"],
         },
@@ -989,7 +986,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "tender_uid":  {"type": "string"},
+                "tender_uid": {"type": "string"},
             },
             "required": ["company_uid", "tender_uid"],
         },
@@ -1005,7 +1002,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "tender_uid":  {"type": "string"},
+                "tender_uid": {"type": "string"},
             },
             "required": ["company_uid", "tender_uid"],
         },
@@ -1021,7 +1018,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "tender_uid":  {"type": "string"},
+                "tender_uid": {"type": "string"},
             },
             "required": ["company_uid", "tender_uid"],
         },
@@ -1036,8 +1033,8 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "tender_uid":  {"type": "string"},
-                "limit":       {"type": "integer", "default": 10},
+                "tender_uid": {"type": "string"},
+                "limit": {"type": "integer", "default": 10},
             },
             "required": ["company_uid", "tender_uid"],
         },
@@ -1045,14 +1042,13 @@ _TOOLS: list[Tool] = [
     Tool(
         name="oie_best_opportunities",
         description=(
-            "Score ALL tenders in the graph for a given company and return "
-            "the top-N ranked by Opportunity Score."
+            "Score ALL tenders in the graph for a given company and return the top-N ranked by Opportunity Score."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "limit":       {"type": "integer", "default": 10},
+                "limit": {"type": "integer", "default": 10},
             },
             "required": ["company_uid"],
         },
@@ -1073,7 +1069,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "limit":       {"type": "integer", "default": 5},
+                "limit": {"type": "integer", "default": 5},
             },
             "required": ["company_uid"],
         },
@@ -1108,7 +1104,7 @@ _TOOLS: list[Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "uid":   {"type": "string"},
+                "uid": {"type": "string"},
                 "limit": {"type": "integer", "default": 100},
             },
             "required": ["uid"],
@@ -1120,9 +1116,9 @@ _TOOLS: list[Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "uid":        {"type": "string"},
+                "uid": {"type": "string"},
                 "min_awards": {"type": "integer", "default": 2},
-                "limit":      {"type": "integer", "default": 30},
+                "limit": {"type": "integer", "default": 30},
             },
             "required": ["uid"],
         },
@@ -1130,13 +1126,12 @@ _TOOLS: list[Tool] = [
     Tool(
         name="bie_supplier_loyalty",
         description=(
-            "Loyalty index per supplier (award_count / total_tenders). "
-            "Overall loyalty score = sqrt(HHI of awards)."
+            "Loyalty index per supplier (award_count / total_tenders). Overall loyalty score = sqrt(HHI of awards)."
         ),
         inputSchema={
             "type": "object",
             "properties": {
-                "uid":   {"type": "string"},
+                "uid": {"type": "string"},
                 "limit": {"type": "integer", "default": 30},
             },
             "required": ["uid"],
@@ -1154,8 +1149,7 @@ _TOOLS: list[Tool] = [
     Tool(
         name="bie_buying_patterns",
         description=(
-            "Temporal and structural buying patterns: cadence, avg value, "
-            "avg bidder count, peak month, busiest year."
+            "Temporal and structural buying patterns: cadence, avg value, avg bidder count, peak month, busiest year."
         ),
         inputSchema={
             "type": "object",
@@ -1178,7 +1172,7 @@ _TOOLS: list[Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "uid":   {"type": "string"},
+                "uid": {"type": "string"},
                 "limit": {"type": "integer", "default": 20},
             },
             "required": ["uid"],
@@ -1266,7 +1260,7 @@ _TOOLS: list[Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "company_uid":       {"type": "string"},
+                "company_uid": {"type": "string"},
                 "opportunity_limit": {"type": "integer", "default": 5},
             },
             "required": ["company_uid"],
@@ -1318,7 +1312,7 @@ _TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "company_uid": {"type": "string"},
-                "limit":       {"type": "integer", "default": 10},
+                "limit": {"type": "integer", "default": 10},
             },
             "required": ["company_uid"],
         },
@@ -1375,7 +1369,9 @@ class KGServer:
     ):
         import os
         import time
+
         _t0 = time.perf_counter()
+
         def _log(msg: str) -> None:
             elapsed = int((time.perf_counter() - _t0) * 1000)
             click.echo(f"[startup +{elapsed:>5}ms] {msg}", err=True)
@@ -1389,7 +1385,7 @@ class KGServer:
         try:
             biz_repo = open_repository(Path(db_path))
         except Exception as exc:
-            _log(f"open_repository() FAILED after {int((time.perf_counter()-_t0)*1000)}ms: {exc}")
+            _log(f"open_repository() FAILED after {int((time.perf_counter() - _t0) * 1000)}ms: {exc}")
             raise
         _log("open_repository() + setup_schema() done")
 
@@ -1413,7 +1409,7 @@ class KGServer:
         self.ede = _engines.ede
         self._server = Server("tenderscope-kg")
         self._register_handlers()
-        _log(f"KGServer.__init__ complete — total {int((time.perf_counter()-_t0)*1000)}ms")
+        _log(f"KGServer.__init__ complete — total {int((time.perf_counter() - _t0) * 1000)}ms")
 
     def _register_handlers(self) -> None:
         @self._server.list_tools()
@@ -1427,9 +1423,7 @@ class KGServer:
                 result = self._dispatch(req.params.name, args)
             except Exception as exc:
                 result = {"error": str(exc)}
-            return CallToolResult(
-                content=[TextContent(type="text", text=json.dumps(result, indent=2))]
-            )
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, indent=2))])
 
     def _dispatch(self, name: str, args: dict) -> Any:
         e = self.engine
@@ -1487,7 +1481,8 @@ class KGServer:
             )
         if name == "biz_find_path":
             return bz.find_path(
-                args["uid1"], args["uid2"],
+                args["uid1"],
+                args["uid2"],
                 max_depth=args.get("max_depth", 6),
             )
         if name == "biz_related_companies":
@@ -1499,9 +1494,7 @@ class KGServer:
         if name == "biz_entity_history":
             return bz.entity_history(args["uid"])
         if name == "biz_list":
-            return bz.list_by_kind(
-                args["kind"], limit=args.get("limit", 50), offset=args.get("offset", 0)
-            )
+            return bz.list_by_kind(args["kind"], limit=args.get("limit", 50), offset=args.get("offset", 0))
         if name == "biz_import":
             return self._dispatch_biz_import(args)
 
@@ -1543,13 +1536,11 @@ class KGServer:
         if name == "rie_strength":
             return rie.relationship_strength(args["uid_a"], args["uid_b"])
         if name == "rie_path":
-            return rie.shortest_path(args["uid_a"], args["uid_b"],
-                                     max_depth=args.get("max_depth", 8))
+            return rie.shortest_path(args["uid_a"], args["uid_b"], max_depth=args.get("max_depth", 8))
         if name == "rie_infer":
             return rie.infer_relationships(args["uid"], limit=args.get("limit", 50))
         if name == "rie_partnerships":
-            return rie.recurring_partnerships(args["uid"],
-                                              min_count=args.get("min_count", 2))
+            return rie.recurring_partnerships(args["uid"], min_count=args.get("min_count", 2))
         if name == "rie_industry_cluster":
             return rie.industry_clusters(args["industry"], limit=args.get("limit", 100))
         if name == "rie_geo_cluster":
@@ -1654,25 +1645,15 @@ class KGServer:
         if name == "oie_portfolio_impact":
             return oie.portfolio_impact(args["company_uid"], args["tender_uid"])
         if name == "oie_similar_opportunities":
-            return oie.similar_opportunities(
-                args["company_uid"], args["tender_uid"],
-                limit=args.get("limit", 10)
-            )
+            return oie.similar_opportunities(args["company_uid"], args["tender_uid"], limit=args.get("limit", 10))
         if name == "oie_best_opportunities":
-            return oie.best_opportunities(
-                args["company_uid"], limit=args.get("limit", 10)
-            )
+            return oie.best_opportunities(args["company_uid"], limit=args.get("limit", 10))
         if name == "oie_executive_summary":
-            return oie.executive_summary(
-                args["company_uid"], limit=args.get("limit", 5)
-            )
+            return oie.executive_summary(args["company_uid"], limit=args.get("limit", 5))
 
         ede = self.ede
         if name == "ede_executive_decision":
-            return ede.executive_decision(
-                args["company_uid"],
-                opportunity_limit=args.get("opportunity_limit", 5)
-            )
+            return ede.executive_decision(args["company_uid"], opportunity_limit=args.get("opportunity_limit", 5))
         if name == "ede_company_situation":
             return ede.company_situation(args["company_uid"])
         if name == "ede_market_position":
@@ -1680,9 +1661,7 @@ class KGServer:
         if name == "ede_relationship_map":
             return ede.relationship_map(args["company_uid"])
         if name == "ede_opportunity_pipeline":
-            return ede.opportunity_pipeline(
-                args["company_uid"], limit=args.get("limit", 10)
-            )
+            return ede.opportunity_pipeline(args["company_uid"], limit=args.get("limit", 10))
         if name == "ede_buyer_landscape":
             return ede.buyer_landscape(args["company_uid"])
         if name == "ede_strategic_priorities":
@@ -1700,6 +1679,7 @@ class KGServer:
 
         # Resolve path: absolute or relative to repo root
         from pathlib import Path as _Path
+
         p = _Path(path)
         if not p.is_absolute():
             p = self.repo_root / p
@@ -1744,9 +1724,10 @@ class KGServer:
         sse = SseServerTransport("/messages/")
 
         async def handle_sse(request):
-            async with sse.connect_sse(
-                request.scope, request.receive, request._send
-            ) as (read_stream, write_stream):
+            async with sse.connect_sse(request.scope, request.receive, request._send) as (
+                read_stream,
+                write_stream,
+            ):
                 await self._server.run(
                     read_stream,
                     write_stream,
@@ -1763,18 +1744,14 @@ class KGServer:
 
             database_url = os.environ.get("DATABASE_URL", "").strip()
             if not database_url:
-                return JSONResponse(
-                    {"error": "DATABASE_URL not set"}, status_code=503
-                )
+                return JSONResponse({"error": "DATABASE_URL not set"}, status_code=503)
             try:
                 conn = psycopg2.connect(database_url)
                 from tenderscope_kg.importers.bc_scraper_pg_importer import (
                     BCScraperPGImporter,
                 )
 
-                importer = BCScraperPGImporter(
-                    repo=self.db.biz_repo, conn=conn
-                )
+                importer = BCScraperPGImporter(repo=self.db.biz_repo, conn=conn)
                 counts = importer.verify_access()
                 conn.close()
                 return JSONResponse({"status": "ok", "public_table_counts": counts})
@@ -1786,17 +1763,14 @@ class KGServer:
             Runs in a thread executor so the event loop stays unblocked.
             """
             import asyncio
+
             import psycopg2
 
             database_url = os.environ.get("DATABASE_URL", "").strip()
             if not database_url:
-                return JSONResponse(
-                    {"error": "DATABASE_URL not set"}, status_code=503
-                )
+                return JSONResponse({"error": "DATABASE_URL not set"}, status_code=503)
             if self.db.biz_repo is None:
-                return JSONResponse(
-                    {"error": "graph repository not initialised"}, status_code=503
-                )
+                return JSONResponse({"error": "graph repository not initialised"}, status_code=503)
 
             biz_repo = self.db.biz_repo
 
@@ -1804,6 +1778,7 @@ class KGServer:
                 from tenderscope_kg.importers.bc_scraper_pg_importer import (
                     BCScraperPGImporter,
                 )
+
                 conn = psycopg2.connect(database_url)
                 try:
                     importer = BCScraperPGImporter(repo=biz_repo, conn=conn)
@@ -1814,26 +1789,25 @@ class KGServer:
             try:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(None, _run_import)
-                graph_stats = await loop.run_in_executor(
-                    None, biz_repo.get_stats
-                )
-                return JSONResponse(
-                    {"import_result": result.to_dict(), "graph_stats": graph_stats}
-                )
+                graph_stats = await loop.run_in_executor(None, biz_repo.get_stats)
+                return JSONResponse({"import_result": result.to_dict(), "graph_stats": graph_stats})
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=500)
 
         from .rest_server import create_rest_app
         from .server_engines import EngineSet
-        rest_app = create_rest_app(EngineSet(
-            biz=self.biz_engine,
-            cie=self.cie,
-            rie=self.rie,
-            cei=self.cei,
-            bie=self.bie,
-            oie=self.oie,
-            ede=self.ede,
-        ))
+
+        rest_app = create_rest_app(
+            EngineSet(
+                biz=self.biz_engine,
+                cie=self.cie,
+                rie=self.rie,
+                cei=self.cei,
+                bie=self.bie,
+                oie=self.oie,
+                ede=self.ede,
+            )
+        )
 
         app = Starlette(
             routes=[
@@ -1842,6 +1816,8 @@ class KGServer:
                 Route("/api/verify", endpoint=handle_verify),
                 Route("/api/import", endpoint=handle_import, methods=["POST"]),
                 Mount("/messages/", app=sse.handle_post_message),
+                # Stable v1 prefix and legacy prefix serve the same REST app.
+                Mount("/api/v1/graph", app=rest_app),
                 Mount("/api/graph", app=rest_app),
             ]
         )
@@ -1873,7 +1849,9 @@ def run(repo: str, db: str | None, index: bool, transport: str, port: int | None
     import os
     import time
     import traceback
+
     _run_t0 = time.perf_counter()
+
     def _log(msg: str) -> None:
         elapsed = int((time.perf_counter() - _run_t0) * 1000)
         click.echo(f"[run +{elapsed:>5}ms] {msg}", err=True)

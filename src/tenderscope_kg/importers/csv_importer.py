@@ -35,6 +35,7 @@ Example usage
     )
     result = importer.run()
 """
+
 from __future__ import annotations
 
 import csv

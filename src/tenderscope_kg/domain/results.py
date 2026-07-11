@@ -1,6 +1,7 @@
 """
 TenderScope Knowledge Graph — Import result summary.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

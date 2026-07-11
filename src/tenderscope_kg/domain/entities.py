@@ -19,6 +19,7 @@ metadata stored in attributes or attached via ALIAS_OF / SAME_AS relations.
 Use CompanyIdentity for a structured read-only view of a canonical company
 with all its identifiers, names, and aliases in one place.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -29,15 +30,15 @@ from typing import Any, Optional
 class BizEntity:
     """A node in the business knowledge graph."""
 
-    uid: str                                  # e.g. "CMP-00000001"
-    kind: Any                                 # BizEntityKind (avoid circular import)
-    name: str                                 # display name
-    canonical_name: str                       # normalised for dedup (see canonicalize())
+    uid: str  # e.g. "CMP-00000001"
+    kind: Any  # BizEntityKind (avoid circular import)
+    name: str  # display name
+    canonical_name: str  # normalised for dedup (see canonicalize())
     attributes: dict[str, Any] = field(default_factory=dict)
-    source: Optional[str] = None             # which importer created this
-    confidence: float = 1.0                  # 0–1 data-quality score
-    created_at: Optional[str] = None         # ISO 8601
-    updated_at: Optional[str] = None         # ISO 8601
+    source: Optional[str] = None  # which importer created this
+    confidence: float = 1.0  # 0–1 data-quality score
+    created_at: Optional[str] = None  # ISO 8601
+    updated_at: Optional[str] = None  # ISO 8601
 
     def to_summary(self) -> dict:
         d: dict = {
@@ -70,15 +71,15 @@ class BizEntity:
 class BizRelation:
     """A typed edge in the business knowledge graph."""
 
-    id: str                                   # sha256[:16] of (source_uid+kind+target_uid)
+    id: str  # sha256[:16] of (source_uid+kind+target_uid)
     source_uid: str
     target_uid: str
-    kind: Any                                 # BizRelationKind
+    kind: Any  # BizRelationKind
     confidence: float = 1.0
-    source: Optional[str] = None             # importer name
+    source: Optional[str] = None  # importer name
     attributes: dict[str, Any] = field(default_factory=dict)
-    valid_from: Optional[str] = None         # ISO 8601
-    valid_to: Optional[str] = None           # ISO 8601; None = still valid
+    valid_from: Optional[str] = None  # ISO 8601
+    valid_to: Optional[str] = None  # ISO 8601; None = still valid
     created_at: Optional[str] = None
 
     def to_dict(self) -> dict:
@@ -128,6 +129,7 @@ class IdentityEvidence:
     decided_at : str | None
         ISO 8601 timestamp of the decision.
     """
+
     confidence: float
     reason: str
     explanation: str
@@ -193,6 +195,7 @@ class CompanyIdentity:
     confidence : float
         Data quality confidence of the canonical record itself.
     """
+
     company_uid: str
     display_name: str
     canonical_name: str
@@ -205,13 +208,13 @@ class CompanyIdentity:
 
     def to_dict(self) -> dict:
         return {
-            "company_uid":       self.company_uid,
-            "display_name":      self.display_name,
-            "canonical_name":    self.canonical_name,
-            "aliases":           self.aliases,
-            "external_ids":      self.external_ids,
-            "attributes":        self.attributes,
-            "merge_candidates":  self.merge_candidates,
-            "source":            self.source,
-            "confidence":        self.confidence,
+            "company_uid": self.company_uid,
+            "display_name": self.display_name,
+            "canonical_name": self.canonical_name,
+            "aliases": self.aliases,
+            "external_ids": self.external_ids,
+            "attributes": self.attributes,
+            "merge_candidates": self.merge_candidates,
+            "source": self.source,
+            "confidence": self.confidence,
         }

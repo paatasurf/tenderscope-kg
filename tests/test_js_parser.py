@@ -1,7 +1,9 @@
 """Tests for the JavaScript/TypeScript parser."""
+
 import pytest
-from tenderscope_kg.parsers.js_parser import JavaScriptParser
+
 from tenderscope_kg.models import EntityKind, RelationKind
+from tenderscope_kg.parsers.js_parser import JavaScriptParser
 
 TS_SOURCE = """\
 import { Request, Response } from 'express';

@@ -15,6 +15,7 @@ Usage in tests:
     def repo():
         return FakeBizRepository()
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -22,15 +23,15 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Generator, Optional
 
-from tenderscope_kg.repository._base import BizRepository
 from tenderscope_kg.domain import (
+    UID_PREFIXES,
     BizEntity,
     BizEntityKind,
     BizRelation,
     BizRelationKind,
-    UID_PREFIXES,
     canonicalize,
 )
+from tenderscope_kg.repository._base import BizRepository
 
 
 def _now() -> str:
@@ -69,6 +70,7 @@ class FakeBizRepository(BizRepository):
     @contextmanager
     def transaction(self) -> Generator:
         import copy
+
         snapshot_entities = copy.deepcopy(self._entities)
         snapshot_relations = copy.deepcopy(self._relations)
         snapshot_history = copy.deepcopy(self._history)
@@ -200,9 +202,7 @@ class FakeBizRepository(BizRepository):
     def get(self, uid: str) -> Optional[BizEntity]:
         return self._entities.get(uid)
 
-    def find_by_canonical(
-        self, kind: BizEntityKind, canonical_name: str
-    ) -> Optional[BizEntity]:
+    def find_by_canonical(self, kind: BizEntityKind, canonical_name: str) -> Optional[BizEntity]:
         for e in self._entities.values():
             if e.kind == kind and e.canonical_name == canonical_name:
                 return e
@@ -222,7 +222,7 @@ class FakeBizRepository(BizRepository):
             needle = canonicalize(name_like)
             results = [e for e in results if needle in e.canonical_name]
         results.sort(key=lambda e: e.name)
-        return results[offset: offset + limit]
+        return results[offset : offset + limit]
 
     def find_by_attribute(
         self,
@@ -276,13 +276,8 @@ class FakeBizRepository(BizRepository):
 
         return results[:limit]
 
-    def get_relations_between(
-        self, source_uid: str, target_uid: str
-    ) -> list[BizRelation]:
-        return [
-            r for r in self._relations.values()
-            if r.source_uid == source_uid and r.target_uid == target_uid
-        ]
+    def get_relations_between(self, source_uid: str, target_uid: str) -> list[BizRelation]:
+        return [r for r in self._relations.values() if r.source_uid == source_uid and r.target_uid == target_uid]
 
     def entity_history(self, uid: str) -> list[dict]:
         return list(self._history.get(uid, []))

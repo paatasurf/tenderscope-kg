@@ -10,14 +10,15 @@ continues to work without modification.
 
 New code should import directly from tenderscope_kg.domain.
 """
+
 from __future__ import annotations
 
 from .domain.entities import BizEntity, BizRelation
 from .domain.kinds import (
+    PREFIX_TO_KIND,
+    UID_PREFIXES,
     BizEntityKind,
     BizRelationKind,
-    UID_PREFIXES,
-    PREFIX_TO_KIND,
     canonicalize,
 )
 from .domain.results import ImportResult
@@ -32,4 +33,3 @@ __all__ = [
     "canonicalize",
     "ImportResult",
 ]
-

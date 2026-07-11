@@ -60,19 +60,21 @@ Executive Decision Engine (v8)
 
 All layers share one SQLite file and one connection.
 """
+
 __version__ = "0.8.0"
 
-from .db import GraphDB
-from .indexer import Indexer
-from .query_engine import QueryEngine
-from .domain import BizEntity, BizEntityKind, BizRelation, BizRelationKind
-from .repository._base import BizRepository
 from .biz_query_engine import BizQueryEngine
-from .company_intelligence import CompanyIntelligenceEngine
-from .relationship_intelligence import RelationshipIntelligenceEngine
-from .competitive_intelligence import CompetitiveIntelligenceEngine
 from .buyer_intelligence import BuyerIntelligenceEngine
+from .company_intelligence import CompanyIntelligenceEngine
+from .competitive_intelligence import CompetitiveIntelligenceEngine
+from .db import GraphDB
+from .domain import BizEntity, BizEntityKind, BizRelation, BizRelationKind
+from .indexer import Indexer
 from .opportunity_intelligence import OpportunityIntelligenceEngine
+from .query_engine import QueryEngine
+from .relationship_intelligence import RelationshipIntelligenceEngine
+from .repository._base import BizRepository
+
 try:
     from .executive_decision import ExecutiveDecisionEngine
 except ModuleNotFoundError:

@@ -11,6 +11,7 @@ Run postgres contract tests:
     PG_TEST_URL=postgresql://user:pass@localhost/testdb pytest \\
         tests/repository_contract/ -m postgres
 """
+
 from __future__ import annotations
 
 import os
@@ -42,6 +43,7 @@ def _make_pg_repo():
     if not dsn:
         pytest.skip("PG_TEST_URL not set — skipping postgres contract tests")
     from tenderscope_kg.repository._postgres import BizRepositoryPG
+
     conn = psycopg2.connect(dsn)
     repo = BizRepositoryPG(conn=conn)
     repo.setup_schema()

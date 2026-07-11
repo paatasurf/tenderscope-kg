@@ -6,16 +6,17 @@ Supports two formats:
   - List of entity objects: [{"kind": "company", "name": "...", "attrs": {...}}, ...]
   - Dict with "entities" and optional "relations" keys.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
 
-from .base import BaseImporter
-from ..domain.results import ImportResult
 from ..domain import BizEntityKind, BizRelationKind
+from ..domain.results import ImportResult
 from ..repository._base import BizRepository
+from .base import BaseImporter
 
 
 class JSONImporter(BaseImporter):
@@ -73,8 +74,7 @@ class JSONImporter(BaseImporter):
             except ValueError:
                 result.errors.append(f"Unknown entity kind '{kind_str}' — skipping.")
                 continue
-            _, created = self.repo.put_entity(kind, name, attrs,
-                                              source=self.source_tag)
+            _, created = self.repo.put_entity(kind, name, attrs, source=self.source_tag)
             if created:
                 result.entities_created += 1
             else:
@@ -126,9 +126,7 @@ class JSONImporter(BaseImporter):
                         pass
 
             if not (src and tgt):
-                result.errors.append(
-                    f"Could not resolve endpoints for relation {raw!r} — skipping."
-                )
+                result.errors.append(f"Could not resolve endpoints for relation {raw!r} — skipping.")
                 continue
             self.repo.put_relation(src, kind, tgt, source=self.source_tag)
             result.relations_created += 1

@@ -18,11 +18,11 @@ If sub-second performance is needed at very large scale, the path-finding
 methods can be swapped for a compiled extension (e.g., sqlite-graph) or an
 external engine (Neo4j) without changing the calling interface.
 """
+
 from __future__ import annotations
 
-import re
 from collections import deque
-from typing import Any, Optional
+from typing import Optional
 
 from .domain import BizEntity, BizEntityKind, BizRelationKind
 from .repository._base import BizRepository
@@ -44,10 +44,7 @@ class BizQueryEngine:
         neighbors = self.repo.get_neighbors(uid, direction="both", limit=50)
         return {
             "entity": e.to_full(),
-            "neighbors": [
-                {"relation": rel.kind.value, "entity": nb.to_summary()}
-                for rel, nb in neighbors
-            ],
+            "neighbors": [{"relation": rel.kind.value, "entity": nb.to_summary()} for rel, nb in neighbors],
         }
 
     def company(self, uid: str) -> dict:
@@ -137,11 +134,13 @@ class BizQueryEngine:
         neighbors = self.repo.get_neighbors(e.uid, direction="both", limit=100)
         grouped: dict[str, list[dict]] = {}
         for rel, nb in neighbors:
-            grouped.setdefault(rel.kind.value, []).append({
-                **nb.to_summary(),
-                "relation_confidence": rel.confidence,
-                "relation_source": rel.source,
-            })
+            grouped.setdefault(rel.kind.value, []).append(
+                {
+                    **nb.to_summary(),
+                    "relation_confidence": rel.confidence,
+                    "relation_source": rel.source,
+                }
+            )
         return {
             "entity": e.to_full(),
             "connections": grouped,
@@ -188,10 +187,7 @@ class BizQueryEngine:
         hits = self.repo.find(kind=BizEntityKind.COMPANY, name_like=name, limit=limit)
         alias_hits = self.repo.find(kind=BizEntityKind.COMPANY_ALIAS, name_like=name, limit=limit)
         fts = self.repo.search_fts(name, limit=limit)
-        fts_companies = [
-            e for e in fts
-            if e.kind in (BizEntityKind.COMPANY, BizEntityKind.COMPANY_ALIAS)
-        ]
+        fts_companies = [e for e in fts if e.kind in (BizEntityKind.COMPANY, BizEntityKind.COMPANY_ALIAS)]
         seen: dict[str, BizEntity] = {}
         for e in hits + alias_hits + fts_companies:
             resolved = self.repo.resolve_alias(e.uid) or e
@@ -218,9 +214,7 @@ class BizQueryEngine:
                 seen[nb.uid] = nb
             # Hop 2 via non-company intermediaries
             if nb.kind != BizEntityKind.COMPANY:
-                neighbors2 = self.repo.get_neighbors(
-                    nb.uid, direction="both", limit=20
-                )
+                neighbors2 = self.repo.get_neighbors(nb.uid, direction="both", limit=20)
                 for _, nb2 in neighbors2:
                     if nb2.kind == BizEntityKind.COMPANY and nb2.uid != uid:
                         seen[nb2.uid] = nb2
@@ -251,11 +245,13 @@ class BizQueryEngine:
         )
         results = []
         for rel, nb in award_rels:
-            results.append({
-                "relation": rel.kind.value,
-                "entity": nb.to_summary(),
-                "confidence": rel.confidence,
-            })
+            results.append(
+                {
+                    "relation": rel.kind.value,
+                    "entity": nb.to_summary(),
+                    "confidence": rel.confidence,
+                }
+            )
         return {
             "company": company.to_summary(),
             "contracts": results,
@@ -287,10 +283,7 @@ class BizQueryEngine:
         return {
             "entity": entity.to_summary(),
             "direction": direction,
-            "neighbors": [
-                {"relation": rel.to_dict(), "entity": nb.to_summary()}
-                for rel, nb in pairs
-            ],
+            "neighbors": [{"relation": rel.to_dict(), "entity": nb.to_summary()} for rel, nb in pairs],
             "count": len(pairs),
         }
 
@@ -359,17 +352,13 @@ class BizQueryEngine:
         start_entity = self.repo.get(start)
         if not start_entity:
             return None
-        queue: deque[tuple[str, list[dict]]] = deque(
-            [(start, [start_entity.to_summary()])]
-        )
+        queue: deque[tuple[str, list[dict]]] = deque([(start, [start_entity.to_summary()])])
 
         while queue:
             current_uid, path = queue.popleft()
             if len(path) > max_depth + 1:
                 break
-            neighbors = self.repo.get_neighbors(
-                current_uid, direction="both", kinds=rel_kinds, limit=200
-            )
+            neighbors = self.repo.get_neighbors(current_uid, direction="both", kinds=rel_kinds, limit=200)
             for rel, nb in neighbors:
                 if nb.uid == goal:
                     return path + [{"via": rel.kind.value, **nb.to_summary()}]

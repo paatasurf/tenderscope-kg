@@ -16,38 +16,37 @@ Covers:
 - best_opportunities / executive_summary across a multi-tender graph
 - Edge cases: missing buyer, no history, zero value, wrong entity kind
 """
+
 from __future__ import annotations
 
-import sqlite3
 import datetime
-from typing import Any
+import sqlite3
 
 import pytest
 
 from tenderscope_kg.domain import BizEntityKind, BizRelationKind
-from tenderscope_kg.repository._base import BizRepository
-from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 from tenderscope_kg.opportunity_intelligence import (
     OpportunityIntelligenceEngine,
-    _ev,
-    _confidence,
-    _parse_year,
-    _parse_month,
-    _safe_float,
-    _value_bucket,
-    _hhi,
     _clamp,
-    _require_entity,
-    _tender_value,
-    _tender_date,
+    _confidence,
     _deadline_date,
+    _ev,
+    _hhi,
     _months_until,
+    _parse_month,
+    _parse_year,
+    _require_entity,
+    _safe_float,
+    _tender_date,
+    _tender_value,
+    _value_bucket,
 )
-
+from tenderscope_kg.repository._sqlite import BizRepositorySQLite
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Fixtures
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @pytest.fixture
 def repo():
@@ -64,6 +63,7 @@ def engine(repo):
 
 
 # ── Entity creation helpers ────────────────────────────────────────────────
+
 
 def make_company(repo, name: str, attrs: dict | None = None):
     entity, _ = repo.put_entity(BizEntityKind.COMPANY, name, attrs or {})
@@ -116,14 +116,17 @@ def company_in_city(repo, company, city):
 
 # ── Minimal graph: one company, one tender ────────────────────────────────
 
+
 @pytest.fixture
 def simple_graph(repo):
     """A company, a tender they won, issued by a buyer org."""
     company = make_company(repo, "Acme Corp", {"city": "Vancouver", "province": "BC"})
-    buyer   = make_org(repo, "Ministry of Works")
-    tender  = make_tender(repo, "Road Repair 2024",
-                          {"value": 500_000, "valid_from": "2024-01-15",
-                           "closing_date": "2027-12-31"})
+    buyer = make_org(repo, "Ministry of Works")
+    tender = make_tender(
+        repo,
+        "Road Repair 2024",
+        {"value": 500_000, "valid_from": "2024-01-15", "closing_date": "2027-12-31"},
+    )
     tender_issued_by(repo, tender, buyer)
     company_wins_tender(repo, company, tender)
     return {"company": company, "buyer": buyer, "tender": tender}
@@ -139,15 +142,15 @@ def rich_graph(repo):
     Industry: Construction
     Location: Vancouver
     """
-    co_a  = make_company(repo, "Alpha Builds", {"city": "Vancouver", "province": "BC"})
-    co_b  = make_company(repo, "Beta Contractors")
-    co_c  = make_company(repo, "Gamma Works")
+    co_a = make_company(repo, "Alpha Builds", {"city": "Vancouver", "province": "BC"})
+    co_b = make_company(repo, "Beta Contractors")
+    co_c = make_company(repo, "Gamma Works")
 
     buyer_x = make_org(repo, "City of Vancouver")
     buyer_y = make_org(repo, "Province of BC")
 
     ind_const = make_industry(repo, "Construction")
-    ind_eng   = make_industry(repo, "Engineering")
+    ind_eng = make_industry(repo, "Engineering")
 
     company_in_industry(repo, co_a, ind_const)
     company_in_industry(repo, co_b, ind_const)
@@ -157,41 +160,45 @@ def rich_graph(repo):
 
     # Historical tenders with buyer_x (won 3, lost 1)
     for i in range(1, 4):
-        t = make_tender(repo, f"BuyerX Win {i}",
-                        {"value": 300_000 * i, "valid_from": f"202{i}-03-10"})
+        t = make_tender(repo, f"BuyerX Win {i}", {"value": 300_000 * i, "valid_from": f"202{i}-03-10"})
         tender_issued_by(repo, t, buyer_x)
         company_wins_tender(repo, co_a, t)
         company_bids_tender(repo, co_b, t)
 
-    t_loss = make_tender(repo, "BuyerX Loss 1",
-                         {"value": 200_000, "valid_from": "2022-07-01"})
+    t_loss = make_tender(repo, "BuyerX Loss 1", {"value": 200_000, "valid_from": "2022-07-01"})
     tender_issued_by(repo, t_loss, buyer_x)
     company_bids_tender(repo, co_a, t_loss)
     company_wins_tender(repo, co_b, t_loss)
 
     # Win with buyer_y
-    t_y = make_tender(repo, "BuyerY Win 1",
-                      {"value": 1_500_000, "valid_from": "2023-06-01"})
+    t_y = make_tender(repo, "BuyerY Win 1", {"value": 1_500_000, "valid_from": "2023-06-01"})
     tender_issued_by(repo, t_y, buyer_y)
     company_wins_tender(repo, co_a, t_y)
     company_bids_tender(repo, co_c, t_y)
 
     # New target tender from buyer_x
-    target = make_tender(repo, "New Bridge Project",
-                         {"value": 800_000, "valid_from": "2024-01-01",
-                          "closing_date": "2027-06-30",
-                          "city": "Vancouver", "province": "BC"})
+    target = make_tender(
+        repo,
+        "New Bridge Project",
+        {
+            "value": 800_000,
+            "valid_from": "2024-01-01",
+            "closing_date": "2027-06-30",
+            "city": "Vancouver",
+            "province": "BC",
+        },
+    )
     tender_issued_by(repo, target, buyer_x)
 
     return {
-        "company":   co_a,
-        "co_b":      co_b,
-        "co_c":      co_c,
-        "buyer_x":   buyer_x,
-        "buyer_y":   buyer_y,
+        "company": co_a,
+        "co_b": co_b,
+        "co_c": co_c,
+        "buyer_x": buyer_x,
+        "buyer_y": buyer_y,
         "ind_const": ind_const,
-        "ind_eng":   ind_eng,
-        "target":    target,
+        "ind_eng": ind_eng,
+        "target": target,
     }
 
 
@@ -199,8 +206,8 @@ def rich_graph(repo):
 # Helper function tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestHelpers:
 
+class TestHelpers:
     def test_ev_structure(self):
         e = _ev("CMP-1", "awarded_to", "TEN-1", "Acme", "Road Repair")
         assert e["entity_uid"] == "CMP-1"
@@ -368,8 +375,8 @@ class TestHelpers:
 # opportunity_score tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestOpportunityScore:
 
+class TestOpportunityScore:
     def test_company_not_found(self, engine):
         result = engine.opportunity_score("CMP-NOTEXIST", "TEN-NOTEXIST")
         assert "error" in result
@@ -392,7 +399,7 @@ class TestOpportunityScore:
 
     def test_score_fields_present(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_score(co.uid, t.uid)
         assert "error" not in result
         assert "score" in result
@@ -406,58 +413,64 @@ class TestOpportunityScore:
 
     def test_score_range(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_score(co.uid, t.uid)
         assert 0.0 <= result["score"] <= 100.0
 
     def test_all_ten_dimensions_present(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_score(co.uid, t.uid)
         expected = {
-            "capability_fit", "buyer_history", "industry_history",
-            "value_fit", "geographic_fit", "competition_level",
-            "buyer_attractiveness", "strategic_importance",
-            "workload_impact", "win_probability",
+            "capability_fit",
+            "buyer_history",
+            "industry_history",
+            "value_fit",
+            "geographic_fit",
+            "competition_level",
+            "buyer_attractiveness",
+            "strategic_importance",
+            "workload_impact",
+            "win_probability",
         }
         assert set(result["dimensions"].keys()) == expected
 
     def test_dimension_weight_sum(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_score(co.uid, t.uid)
         total_weight = sum(v["weight"] for v in result["dimensions"].values())
         assert total_weight == 100
 
     def test_dimension_score_gte_zero(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_score(co.uid, t.uid)
         for dim, v in result["dimensions"].items():
             assert v["score"] >= 0, f"{dim} score is negative"
 
     def test_dimension_raw_0_to_1(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_score(co.uid, t.uid)
         for dim, v in result["dimensions"].items():
             assert 0.0 <= v["raw"] <= 1.0, f"{dim} raw out of range"
 
     def test_weighted_sum_matches_score(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_score(co.uid, t.uid)
         expected = sum(v["score"] for v in result["dimensions"].values())
         assert abs(result["score"] - expected) < 0.01
 
     def test_reasoning_chain_has_ten_entries(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_score(co.uid, t.uid)
         assert len(result["reasoning_chain"]) >= 11  # 10 dims + total
 
     def test_score_higher_with_buyer_history(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.opportunity_score(co.uid, target.uid)
         bh_raw = result["dimensions"]["buyer_history"]["raw"]
@@ -466,45 +479,44 @@ class TestOpportunityScore:
 
     def test_new_company_no_history_has_low_win_probability(self, engine, repo):
         co = make_company(repo, "Brand New Co")
-        t  = make_tender(repo, "Some Tender", {"value": 100_000})
+        t = make_tender(repo, "Some Tender", {"value": 100_000})
         result = engine.opportunity_score(co.uid, t.uid)
         wp = result["dimensions"]["win_probability"]["raw"]
         assert wp <= 0.3
 
     def test_missing_tender_value_gives_neutral_value_fit(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "No Value Tender")
+        t = make_tender(repo, "No Value Tender")
         result = engine.opportunity_score(co.uid, t.uid)
         vf = result["dimensions"]["value_fit"]["raw"]
         assert vf == pytest.approx(0.5)
 
     def test_missing_info_when_no_buyer(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Tender No Buyer")
+        t = make_tender(repo, "Tender No Buyer")
         result = engine.opportunity_score(co.uid, t.uid)
         assert any("buyer" in m.lower() for m in result["missing_information"])
 
     def test_missing_info_when_no_value(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Tender No Value")
+        t = make_tender(repo, "Tender No Value")
         result = engine.opportunity_score(co.uid, t.uid)
         assert any("value" in m.lower() for m in result["missing_information"])
 
     def test_geo_fit_perfect_when_same_city(self, engine, repo):
-        co   = make_company(repo, "Local Co", {"city": "Victoria"})
+        co = make_company(repo, "Local Co", {"city": "Victoria"})
         city = make_city(repo, "Victoria")
         company_in_city(repo, co, city)
         org = make_org(repo, "City of Victoria")
-        t   = make_tender(repo, "Local Project",
-                          {"city": "Victoria", "province": "BC"})
+        t = make_tender(repo, "Local Project", {"city": "Victoria", "province": "BC"})
         tender_issued_by(repo, t, org)
         result = engine.opportunity_score(co.uid, t.uid)
         geo = result["dimensions"]["geographic_fit"]["raw"]
         assert geo == pytest.approx(1.0)
 
     def test_competition_score_high_with_few_bidders(self, engine, repo):
-        co     = make_company(repo, "Co")
-        t      = make_tender(repo, "Low Competition Tender")
+        co = make_company(repo, "Co")
+        t = make_tender(repo, "Low Competition Tender")
         bidder = make_company(repo, "Bidder")
         company_bids_tender(repo, bidder, t)
         result = engine.opportunity_score(co.uid, t.uid)
@@ -513,7 +525,7 @@ class TestOpportunityScore:
 
     def test_competition_score_low_with_many_bidders(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "High Competition Tender")
+        t = make_tender(repo, "High Competition Tender")
         for i in range(15):
             b = make_company(repo, f"Bidder {i}")
             company_bids_tender(repo, b, t)
@@ -522,8 +534,8 @@ class TestOpportunityScore:
         assert comp < 0.4
 
     def test_buyer_attractiveness_high_with_many_tenders(self, engine, repo):
-        co      = make_company(repo, "Co")
-        buyer   = make_org(repo, "Big Buyer")
+        co = make_company(repo, "Co")
+        buyer = make_org(repo, "Big Buyer")
         for i in range(20):
             t = make_tender(repo, f"Buyer Tender {i}")
             tender_issued_by(repo, t, buyer)
@@ -534,8 +546,8 @@ class TestOpportunityScore:
         assert ba >= 0.8
 
     def test_industry_history_uses_shared_industry(self, engine, repo):
-        co     = make_company(repo, "Co")
-        ind    = make_industry(repo, "Construction")
+        co = make_company(repo, "Co")
+        ind = make_industry(repo, "Construction")
         winner = make_company(repo, "Winner")
         company_in_industry(repo, co, ind)
         company_in_industry(repo, winner, ind)
@@ -556,15 +568,15 @@ class TestOpportunityScore:
 # opportunity_recommendation tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestOpportunityRecommendation:
 
+class TestOpportunityRecommendation:
     def test_error_propagates(self, engine):
         result = engine.opportunity_recommendation("CMP-X", "TEN-X")
         assert "error" in result
 
     def test_fields_present(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_recommendation(co.uid, t.uid)
         assert "recommendation" in result
         assert "why_pursue" in result
@@ -575,21 +587,21 @@ class TestOpportunityRecommendation:
 
     def test_recommendation_is_valid_label(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_recommendation(co.uid, t.uid)
         valid = {"Strong Pursue", "Pursue", "Strategic Investment", "Monitor", "Ignore"}
         assert result["recommendation"] in valid
 
     def test_high_score_gives_pursue(self, engine, rich_graph):
         """Alpha Builds has strong history with the buyer → should Pursue."""
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.opportunity_recommendation(co.uid, target.uid)
         assert result["recommendation"] in ("Strong Pursue", "Pursue", "Strategic Investment")
 
     def test_new_company_tends_toward_ignore_or_monitor(self, engine, repo):
         co = make_company(repo, "Unknown Co")
-        t  = make_tender(repo, "Big Tender", {"value": 50_000_000})
+        t = make_tender(repo, "Big Tender", {"value": 50_000_000})
         for i in range(12):
             b = make_company(repo, f"Strong Bidder {i}")
             company_wins_tender(repo, b, t)
@@ -597,19 +609,18 @@ class TestOpportunityRecommendation:
         assert result["recommendation"] in ("Monitor", "Ignore", "Strategic Investment")
 
     def test_next_actions_present_for_pursue(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.opportunity_recommendation(co.uid, target.uid)
         if result["recommendation"] in ("Strong Pursue", "Pursue"):
             assert len(result["next_actions"]) > 0
 
     def test_urgent_deadline_appears_in_next_actions(self, engine, repo):
-        co     = make_company(repo, "Co")
-        buyer  = make_org(repo, "Buyer")
+        co = make_company(repo, "Co")
+        buyer = make_org(repo, "Buyer")
         # Deadline in 2 weeks
         soon = (datetime.datetime.now() + datetime.timedelta(days=14)).strftime("%Y-%m-%d")
-        t = make_tender(repo, "Urgent Tender",
-                        {"value": 300_000, "closing_date": soon})
+        t = make_tender(repo, "Urgent Tender", {"value": 300_000, "closing_date": soon})
         tender_issued_by(repo, t, buyer)
         # Give company high history to trigger Pursue
         for i in range(3):
@@ -623,9 +634,9 @@ class TestOpportunityRecommendation:
 
     def test_strategic_investment_label_possible(self, engine, repo):
         """A tender with score ~40–55 + high strategic dimension."""
-        co      = make_company(repo, "Niche Co")
+        co = make_company(repo, "Niche Co")
         new_buy = make_org(repo, "Brand New Buyer")
-        target  = make_tender(repo, "Niche Tender", {"value": 50_000})
+        target = make_tender(repo, "Niche Tender", {"value": 50_000})
         tender_issued_by(repo, target, new_buy)
         # co has zero history → strategic dimension will be elevated (new buyer)
         result = engine.opportunity_recommendation(co.uid, target.uid)
@@ -637,55 +648,63 @@ class TestOpportunityRecommendation:
 # opportunity_explain tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestOpportunityExplain:
 
+class TestOpportunityExplain:
     def test_error_propagates(self, engine):
         result = engine.opportunity_explain("CMP-X", "TEN-X")
         assert "error" in result
 
     def test_all_explainability_fields(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_explain(co.uid, t.uid)
         for key in [
-            "score", "dimensions", "recommendation",
-            "why_pursue", "why_ignore", "next_actions",
-            "evidence", "assumptions", "weak_evidence",
-            "missing_information", "reasoning_chain", "confidence",
+            "score",
+            "dimensions",
+            "recommendation",
+            "why_pursue",
+            "why_ignore",
+            "next_actions",
+            "evidence",
+            "assumptions",
+            "weak_evidence",
+            "missing_information",
+            "reasoning_chain",
+            "confidence",
         ]:
             assert key in result, f"Missing key: {key}"
 
     def test_buyer_present_in_explain(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_explain(co.uid, t.uid)
         assert result["buyer"] is not None
         assert result["buyer"]["name"] == "Ministry of Works"
 
     def test_tender_value_in_explain(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_explain(co.uid, t.uid)
         assert result["tender_value"] == pytest.approx(500_000.0)
 
     def test_tender_deadline_in_explain(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_explain(co.uid, t.uid)
         assert result["tender_deadline"] is not None
 
     def test_explain_consistency_with_score(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         explain = engine.opportunity_explain(co.uid, t.uid)
-        scored  = engine.opportunity_score(co.uid, t.uid)
+        scored = engine.opportunity_score(co.uid, t.uid)
         assert explain["score"] == scored["score"]
 
     def test_explain_consistency_with_recommendation(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         explain = engine.opportunity_explain(co.uid, t.uid)
-        rec     = engine.opportunity_recommendation(co.uid, t.uid)
+        rec = engine.opportunity_recommendation(co.uid, t.uid)
         assert explain["recommendation"] == rec["recommendation"]
 
 
@@ -693,79 +712,81 @@ class TestOpportunityExplain:
 # opportunity_timeline tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestOpportunityTimeline:
 
+class TestOpportunityTimeline:
     def test_error_propagates(self, engine):
         result = engine.opportunity_timeline("CMP-X", "TEN-X")
         assert "error" in result
 
     def test_fields_present(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_timeline(co.uid, t.uid)
         for key in [
-            "submission_urgency", "preparation_effort",
-            "deadline_risk", "months_until_deadline",
-            "comparable_wins", "comparable_losses",
+            "submission_urgency",
+            "preparation_effort",
+            "deadline_risk",
+            "months_until_deadline",
+            "comparable_wins",
+            "comparable_losses",
         ]:
             assert key in result, f"Missing: {key}"
 
     def test_future_deadline_not_expired(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_timeline(co.uid, t.uid)
         assert result["submission_urgency"] != "expired"
 
     def test_urgency_critical_for_near_deadline(self, engine, repo):
-        co   = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         soon = (datetime.datetime.now() + datetime.timedelta(days=5)).strftime("%Y-%m-%d")
-        t    = make_tender(repo, "Critical Deadline Tender",
-                           {"closing_date": soon})
+        t = make_tender(repo, "Critical Deadline Tender", {"closing_date": soon})
         result = engine.opportunity_timeline(co.uid, t.uid)
         assert result["submission_urgency"] in ("critical", "high")
         assert result["deadline_risk"] in ("medium", "high")
 
     def test_urgency_low_for_far_deadline(self, engine, repo):
-        co   = make_company(repo, "Co")
-        far  = (datetime.datetime.now() + datetime.timedelta(days=365)).strftime("%Y-%m-%d")
-        t    = make_tender(repo, "Far Deadline Tender", {"closing_date": far})
+        co = make_company(repo, "Co")
+        far = (datetime.datetime.now() + datetime.timedelta(days=365)).strftime("%Y-%m-%d")
+        t = make_tender(repo, "Far Deadline Tender", {"closing_date": far})
         result = engine.opportunity_timeline(co.uid, t.uid)
         assert result["submission_urgency"] == "low"
         assert result["deadline_risk"] == "low"
 
     def test_prep_effort_medium_for_medium_value(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Medium Value Tender", {"value": 500_000})
+        t = make_tender(repo, "Medium Value Tender", {"value": 500_000})
         result = engine.opportunity_timeline(co.uid, t.uid)
         assert result["preparation_effort"] == "1–3 weeks"
 
     def test_prep_effort_large_for_large_value(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Large Tender", {"value": 10_000_000})
+        t = make_tender(repo, "Large Tender", {"value": 10_000_000})
         result = engine.opportunity_timeline(co.uid, t.uid)
         assert result["preparation_effort"] == "2–6 weeks"
 
     def test_prep_effort_mega(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Mega Tender", {"value": 50_000_000})
+        t = make_tender(repo, "Mega Tender", {"value": 50_000_000})
         result = engine.opportunity_timeline(co.uid, t.uid)
         assert result["preparation_effort"] == "2–4 months"
 
     def test_no_deadline_unknown_urgency(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "No Deadline Tender")
+        t = make_tender(repo, "No Deadline Tender")
         result = engine.opportunity_timeline(co.uid, t.uid)
         assert result["submission_urgency"] == "unknown"
         assert result["months_until_deadline"] is None
 
     def test_comparable_wins_from_history(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.opportunity_timeline(co.uid, target.uid)
         assert len(result["comparable_wins"]) > 0
 
     def test_comparable_losses_from_history(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.opportunity_timeline(co.uid, target.uid)
         # Alpha has 1 loss with buyer X
@@ -776,15 +797,15 @@ class TestOpportunityTimeline:
 # opportunity_risk tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestOpportunityRisk:
 
+class TestOpportunityRisk:
     def test_error_propagates(self, engine):
         result = engine.opportunity_risk("CMP-X", "TEN-X")
         assert "error" in result
 
     def test_fields_present(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_risk(co.uid, t.uid)
         assert "overall_risk" in result
         assert "risk_factors" in result
@@ -792,13 +813,13 @@ class TestOpportunityRisk:
 
     def test_overall_risk_valid_value(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_risk(co.uid, t.uid)
         assert result["overall_risk"] in ("low", "medium", "high")
 
     def test_high_competition_triggers_risk_factor(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Competitive Tender")
+        t = make_tender(repo, "Competitive Tender")
         # Need 13+ bidders so comp_raw = 1.0 - 13/20 = 0.35 < 0.4
         for i in range(13):
             b = make_company(repo, f"Rival {i}")
@@ -810,7 +831,7 @@ class TestOpportunityRisk:
     def test_no_buyer_history_triggers_risk(self, engine, repo):
         # no_buyer_history fires when bh_raw < 0.25.
         # To achieve this: company bids but never wins → win_rate = 0.0 < 0.25.
-        co    = make_company(repo, "Losing Co")
+        co = make_company(repo, "Losing Co")
         buyer = make_org(repo, "Known Buyer")
         winner = make_company(repo, "Always Wins")
         # Give co 3 bids with no wins → bh_raw = 0.0 + volume_bonus(0.3) = 0.03 < 0.25
@@ -826,16 +847,16 @@ class TestOpportunityRisk:
         assert "no_buyer_history" in factors
 
     def test_tight_deadline_triggers_risk(self, engine, repo):
-        co   = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         soon = (datetime.datetime.now() + datetime.timedelta(days=5)).strftime("%Y-%m-%d")
-        t    = make_tender(repo, "Tight Tender", {"closing_date": soon, "value": 300_000})
+        t = make_tender(repo, "Tight Tender", {"closing_date": soon, "value": 300_000})
         result = engine.opportunity_risk(co.uid, t.uid)
         factors = [r["factor"] for r in result["risk_factors"]]
         assert "tight_deadline" in factors
 
     def test_capability_gap_triggers_risk_when_no_industry_overlap(self, engine, repo):
-        co      = make_company(repo, "Co")
-        ind_it  = make_industry(repo, "IT")
+        co = make_company(repo, "Co")
+        ind_it = make_industry(repo, "IT")
         ind_con = make_industry(repo, "Construction")
         company_in_industry(repo, co, ind_it)
         # Create a tender where industry via winning companies is Construction (no IT)
@@ -853,7 +874,7 @@ class TestOpportunityRisk:
 
     def test_mitigations_non_empty_when_risks_exist(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Risky Tender")
+        t = make_tender(repo, "Risky Tender")
         for i in range(12):
             b = make_company(repo, f"Rival {i}")
             company_bids_tender(repo, b, t)
@@ -863,7 +884,7 @@ class TestOpportunityRisk:
 
     def test_risk_factors_have_severity(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Tender")
+        t = make_tender(repo, "Tender")
         result = engine.opportunity_risk(co.uid, t.uid)
         for rf in result["risk_factors"]:
             assert rf["severity"] in ("low", "medium", "high")
@@ -875,20 +896,24 @@ class TestOpportunityRisk:
 # portfolio_impact tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestPortfolioImpact:
 
+class TestPortfolioImpact:
     def test_error_propagates(self, engine):
         result = engine.portfolio_impact("CMP-X", "TEN-X")
         assert "error" in result
 
     def test_fields_present(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.portfolio_impact(co.uid, t.uid)
         for key in [
-            "tender_value", "win_probability", "expected_revenue",
-            "diversification_impact", "strategic_value",
-            "is_new_client", "client_expansion_value",
+            "tender_value",
+            "win_probability",
+            "expected_revenue",
+            "diversification_impact",
+            "strategic_value",
+            "is_new_client",
+            "client_expansion_value",
             "future_relationship_potential",
         ]:
             assert key in result, f"Missing: {key}"
@@ -897,7 +922,7 @@ class TestPortfolioImpact:
         co = make_company(repo, "Co")
         # Give co a win rate of 1.0 (one win, no losses)
         buyer = make_org(repo, "Buyer")
-        past  = make_tender(repo, "Past Win", {"value": 100_000})
+        past = make_tender(repo, "Past Win", {"value": 100_000})
         tender_issued_by(repo, past, buyer)
         company_wins_tender(repo, co, past)
         target = make_tender(repo, "Target Tender", {"value": 1_000_000})
@@ -908,18 +933,18 @@ class TestPortfolioImpact:
         assert result["expected_revenue"] > 0
 
     def test_is_new_client_true_for_unknown_buyer(self, engine, repo):
-        co  = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         org = make_org(repo, "New Org")
-        t   = make_tender(repo, "New Client Tender")
+        t = make_tender(repo, "New Client Tender")
         tender_issued_by(repo, t, org)
         result = engine.portfolio_impact(co.uid, t.uid)
         assert result["is_new_client"] is True
         assert result["client_expansion_value"] == "high"
 
     def test_is_new_client_false_for_known_buyer(self, engine, repo):
-        co    = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         buyer = make_org(repo, "Existing Buyer")
-        past  = make_tender(repo, "Past Tender")
+        past = make_tender(repo, "Past Tender")
         tender_issued_by(repo, past, buyer)
         company_wins_tender(repo, co, past)
         new_t = make_tender(repo, "New Tender")
@@ -929,7 +954,7 @@ class TestPortfolioImpact:
         assert result["client_expansion_value"] == "low"
 
     def test_future_potential_high_with_active_buyer(self, engine, repo):
-        co    = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         buyer = make_org(repo, "Active Buyer")
         for i in range(15):
             t = make_tender(repo, f"Buyer Tender {i}")
@@ -940,16 +965,16 @@ class TestPortfolioImpact:
         assert result["future_relationship_potential"] == "high"
 
     def test_future_potential_low_with_inactive_buyer(self, engine, repo):
-        co    = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         buyer = make_org(repo, "Inactive Buyer")
-        t     = make_tender(repo, "Single Tender")
+        t = make_tender(repo, "Single Tender")
         tender_issued_by(repo, t, buyer)
         result = engine.portfolio_impact(co.uid, t.uid)
         assert result["future_relationship_potential"] == "low"
 
     def test_no_tender_value_gives_none_expected_revenue(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "No Value Tender")
+        t = make_tender(repo, "No Value Tender")
         result = engine.portfolio_impact(co.uid, t.uid)
         assert result["expected_revenue"] is None
 
@@ -958,68 +983,65 @@ class TestPortfolioImpact:
 # similar_opportunities tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestSimilarOpportunities:
 
+class TestSimilarOpportunities:
     def test_error_propagates(self, engine):
         result = engine.similar_opportunities("CMP-X", "TEN-X")
         assert "error" in result
 
     def test_fields_present(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.similar_opportunities(co.uid, t.uid)
         assert "similar_count" in result
         assert "similar" in result
         assert "evidence" in result
 
     def test_same_buyer_match(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.similar_opportunities(co.uid, target.uid)
         # Alpha Builds won tenders with buyer_x which also issues target
         assert result["similar_count"] > 0
-        buyers_matched = [
-            s for s in result["similar"]
-            if "same buyer" in s.get("similarity_reasons", [])
-        ]
+        buyers_matched = [s for s in result["similar"] if "same buyer" in s.get("similarity_reasons", [])]
         assert len(buyers_matched) > 0
 
     def test_outcome_is_win_or_loss(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.similar_opportunities(co.uid, target.uid)
         for s in result["similar"]:
             assert s["outcome"] in ("win", "loss")
 
     def test_similarity_score_range(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.similar_opportunities(co.uid, target.uid)
         for s in result["similar"]:
             assert 0.0 <= s["similarity"] <= 1.0
 
     def test_sorted_by_similarity_descending(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.similar_opportunities(co.uid, target.uid)
         scores = [s["similarity"] for s in result["similar"]]
         assert scores == sorted(scores, reverse=True)
 
     def test_target_not_in_similar(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.similar_opportunities(co.uid, target.uid)
         assert all(s["uid"] != target.uid for s in result["similar"])
 
     def test_limit_respected(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         result = engine.similar_opportunities(co.uid, target.uid, limit=2)
         assert len(result["similar"]) <= 2
 
     def test_no_history_gives_empty_similar(self, engine, repo):
         co = make_company(repo, "New Co")
-        t  = make_tender(repo, "New Tender")
+        t = make_tender(repo, "New Tender")
         result = engine.similar_opportunities(co.uid, t.uid)
         assert result["similar_count"] == 0
         assert result["similar"] == []
@@ -1029,14 +1051,14 @@ class TestSimilarOpportunities:
 # best_opportunities tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestBestOpportunities:
 
+class TestBestOpportunities:
     def test_error_propagates(self, engine):
         result = engine.best_opportunities("CMP-X")
         assert "error" in result
 
     def test_fields_present(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         result = engine.best_opportunities(co.uid)
         assert "total_tenders_scored" in result
         assert "top_opportunities" in result
@@ -1070,7 +1092,7 @@ class TestBestOpportunities:
         assert result["total_tenders_scored"] >= 6
 
     def test_recommendation_label_valid(self, engine, rich_graph):
-        co    = rich_graph["company"]
+        co = rich_graph["company"]
         result = engine.best_opportunities(co.uid)
         valid = {"Strong Pursue", "Pursue", "Strategic Investment", "Monitor", "Ignore"}
         for opp in result["top_opportunities"]:
@@ -1087,29 +1109,36 @@ class TestBestOpportunities:
 # opportunity_profile tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestOpportunityProfile:
 
+class TestOpportunityProfile:
     def test_error_propagates(self, engine):
         result = engine.opportunity_profile("CMP-X", "TEN-X")
         assert "error" in result
 
     def test_all_sub_sections_present(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         result = engine.opportunity_profile(co.uid, t.uid)
-        for key in ["score", "recommendation", "explain",
-                    "timeline", "risk", "portfolio", "similar"]:
+        for key in [
+            "score",
+            "recommendation",
+            "explain",
+            "timeline",
+            "risk",
+            "portfolio",
+            "similar",
+        ]:
             assert key in result, f"Missing section: {key}"
 
     def test_score_consistent_across_sections(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         profile = engine.opportunity_profile(co.uid, t.uid)
         assert profile["score"] == profile["explain"]["score"]
 
     def test_recommendation_consistent_across_sections(self, engine, simple_graph):
         co = simple_graph["company"]
-        t  = simple_graph["tender"]
+        t = simple_graph["tender"]
         profile = engine.opportunity_profile(co.uid, t.uid)
         assert profile["recommendation"] == profile["explain"]["recommendation"]
 
@@ -1118,19 +1147,23 @@ class TestOpportunityProfile:
 # executive_summary tests
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestExecutiveSummary:
 
+class TestExecutiveSummary:
     def test_error_propagates(self, engine):
         result = engine.executive_summary("CMP-X")
         assert "error" in result
 
     def test_fields_present(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         result = engine.executive_summary(co.uid)
         for key in [
-            "total_tenders_scored", "top_opportunities",
-            "biggest_risks", "why_pursue", "why_ignore",
-            "immediate_next_actions", "confidence",
+            "total_tenders_scored",
+            "top_opportunities",
+            "biggest_risks",
+            "why_pursue",
+            "why_ignore",
+            "immediate_next_actions",
+            "confidence",
         ]:
             assert key in result, f"Missing: {key}"
 
@@ -1167,16 +1200,16 @@ class TestExecutiveSummary:
 # Score dimension unit tests (isolated scoring methods)
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestScoringDimensions:
 
+class TestScoringDimensions:
     def test_capability_neutral_when_no_industry_data(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "No Industry Tender")
+        t = make_tender(repo, "No Industry Tender")
         score, ev = engine._score_capability(co.uid, {"uid": t.uid, "attributes": {}})
         assert score == pytest.approx(0.5)
 
     def test_capability_perfect_when_full_overlap(self, engine, repo):
-        co  = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         ind = make_industry(repo, "Construction")
         company_in_industry(repo, co, ind)
         winner = make_company(repo, "Winner")
@@ -1191,9 +1224,8 @@ class TestScoringDimensions:
         assert score == pytest.approx(0.3)
 
     def test_buyer_history_low_when_never_bid_with_buyer(self, engine, repo):
-        co    = make_company(repo, "Co")
-        buyer = {"uid": "ORG-FAKE", "name": "Fake Buyer",
-                 "kind": "organization", "attributes": {}}
+        co = make_company(repo, "Co")
+        buyer = {"uid": "ORG-FAKE", "name": "Fake Buyer", "kind": "organization", "attributes": {}}
         score, ev = engine._score_buyer_history(co.uid, buyer)
         assert score == pytest.approx(0.3)
 
@@ -1218,8 +1250,7 @@ class TestScoringDimensions:
         co = make_company(repo, "Busy Co")
         current_year = datetime.datetime.now().year
         for i in range(10):
-            t = make_tender(repo, f"Recent Tender {i}",
-                            {"valid_from": f"{current_year}-0{(i % 9) + 1}-01"})
+            t = make_tender(repo, f"Recent Tender {i}", {"valid_from": f"{current_year}-0{(i % 9) + 1}-01"})
             company_bids_tender(repo, co, t)
         score, ev = engine._score_workload(co.uid)
         assert score < 0.8
@@ -1230,21 +1261,29 @@ class TestScoringDimensions:
         assert score == pytest.approx(0.2)
 
     def test_win_probability_improves_with_wins(self, engine, repo):
-        co    = make_company(repo, "Winning Co")
+        co = make_company(repo, "Winning Co")
         buyer = make_org(repo, "Buyer")
         for i in range(4):
             t = make_tender(repo, f"Win {i}")
             tender_issued_by(repo, t, buyer)
             company_wins_tender(repo, co, t)
-        buyer_dict = {"uid": buyer.uid, "name": buyer.name,
-                      "kind": "organization", "attributes": {}}
+        buyer_dict = {
+            "uid": buyer.uid,
+            "name": buyer.name,
+            "kind": "organization",
+            "attributes": {},
+        }
         score, ev = engine._score_win_probability(co.uid, buyer_dict, "TEN-X")
         assert score > 0.5
 
     def test_strategic_score_high_for_new_buyer(self, engine, repo):
-        co    = make_company(repo, "Co")
-        buyer = {"uid": "ORG-NEW", "name": "Brand New Buyer",
-                 "kind": "organization", "attributes": {}}
+        co = make_company(repo, "Co")
+        buyer = {
+            "uid": "ORG-NEW",
+            "name": "Brand New Buyer",
+            "kind": "organization",
+            "attributes": {},
+        }
         score, ev = engine._score_strategic(co.uid, buyer, [])
         assert score > 0.3  # new buyer adds bonus
 
@@ -1266,24 +1305,24 @@ class TestScoringDimensions:
 # Idempotency and determinism
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestDeterminism:
 
+class TestDeterminism:
     def test_score_is_deterministic(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         r1 = engine.opportunity_score(co.uid, target.uid)
         r2 = engine.opportunity_score(co.uid, target.uid)
         assert r1["score"] == r2["score"]
 
     def test_recommendation_is_deterministic(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         r1 = engine.opportunity_recommendation(co.uid, target.uid)
         r2 = engine.opportunity_recommendation(co.uid, target.uid)
         assert r1["recommendation"] == r2["recommendation"]
 
     def test_similar_is_deterministic(self, engine, rich_graph):
-        co     = rich_graph["company"]
+        co = rich_graph["company"]
         target = rich_graph["target"]
         r1 = engine.similar_opportunities(co.uid, target.uid)
         r2 = engine.similar_opportunities(co.uid, target.uid)
@@ -1302,23 +1341,23 @@ class TestDeterminism:
 # Edge cases
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestEdgeCases:
 
+class TestEdgeCases:
     def test_score_tender_with_zero_value(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Zero Value Tender", {"value": 0})
+        t = make_tender(repo, "Zero Value Tender", {"value": 0})
         result = engine.opportunity_score(co.uid, t.uid)
         assert "error" not in result
         assert 0 <= result["score"] <= 100
 
     def test_score_tender_with_very_large_value(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Huge Tender", {"value": 1_000_000_000})
+        t = make_tender(repo, "Huge Tender", {"value": 1_000_000_000})
         result = engine.opportunity_score(co.uid, t.uid)
         assert "error" not in result
 
     def test_company_with_only_losses(self, engine, repo):
-        co    = make_company(repo, "Loser Co")
+        co = make_company(repo, "Loser Co")
         buyer = make_org(repo, "Buyer")
         for i in range(5):
             t = make_tender(repo, f"Lost {i}")
@@ -1335,21 +1374,21 @@ class TestEdgeCases:
 
     def test_tender_with_no_issued_by(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "Orphan Tender", {"value": 200_000})
+        t = make_tender(repo, "Orphan Tender", {"value": 200_000})
         result = engine.opportunity_score(co.uid, t.uid)
         assert "error" not in result
         assert any("buyer" in m.lower() for m in result["missing_information"])
 
     def test_portfolio_with_no_buyer_no_crash(self, engine, repo):
         co = make_company(repo, "Co")
-        t  = make_tender(repo, "No Buyer Tender", {"value": 100_000})
+        t = make_tender(repo, "No Buyer Tender", {"value": 100_000})
         result = engine.portfolio_impact(co.uid, t.uid)
         assert "error" not in result
 
     def test_executive_summary_only_one_tender(self, engine, repo):
-        co    = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         buyer = make_org(repo, "Buyer")
-        t     = make_tender(repo, "Only Tender", {"value": 500_000})
+        t = make_tender(repo, "Only Tender", {"value": 500_000})
         tender_issued_by(repo, t, buyer)
         company_wins_tender(repo, co, t)
         # Score a different tender for the same company
@@ -1359,7 +1398,7 @@ class TestEdgeCases:
         assert "error" not in result
 
     def test_similar_opportunities_value_bucket_match(self, engine, repo):
-        co    = make_company(repo, "Co")
+        co = make_company(repo, "Co")
         buyer = make_org(repo, "Buyer")
         # Past medium tender (won)
         past = make_tender(repo, "Past Medium", {"value": 500_000})
