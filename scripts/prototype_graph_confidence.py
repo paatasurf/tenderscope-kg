@@ -1,20 +1,28 @@
-"""Prototype impact analysis for graph confidence-based CI/EDE gating (read-only).
+
+"""Phase 2.1 Production Validation -- Graph confidence impact analysis (read-only).
 
 This script computes a synthetic confidence score for every COMPANY node in a
 TenderScope knowledge graph and simulates what would happen if CI/EDE only
 consumed companies above a confidence threshold.
 
-The confidence formula is a prototype and can be tuned. It currently weights:
+Confidence is derived from:
   - external identifiers (BC Registry, BN, GST, scraper_id, etc.)
-  - ALIAS_OF / SAME_AS edges carrying IdentityEvidence
-  - business relationships (AWARDED_TO, SUBMITTED_BID, PARTICIPATED_IN)
+  - ALIAS_OF edges carrying IdentityEvidence
+  - SAME_AS merge candidates
+  - business activity edges (AWARDED_TO, SUBMITTED_BID, etc.)
   - source diversity
 
-Run against a graph database:
+Run against a graph database snapshot:
 
+    cd tenderscope-kg
     python scripts/prototype_graph_confidence.py /path/to/graph.db
 
-If no path is supplied, it uses the local `.tkg/graph.db` in the repo root.
+If no path is supplied, it uses the local .tkg/graph.db. For PostgreSQL:
+
+    export DATABASE_URL="postgresql://..."
+    python scripts/prototype_graph_confidence.py
+
+The script never writes to the database.
 """
 
 from __future__ import annotations
@@ -24,10 +32,10 @@ import os
 import sys
 from collections import Counter
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Ensure repo src is importable
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
@@ -38,6 +46,7 @@ from tenderscope_kg.repository._base import IdentityEvidence
 
 
 CONFIDENCE_THRESHOLDS = (0.25, 0.5, 0.7, 0.85)
+HISTOGRAM_BUCKETS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 
 @dataclass
@@ -67,23 +76,22 @@ class GraphConfidenceReport:
     graph_path: str
     total_company_nodes: int = 0
     score_distribution: dict[str, int] = field(default_factory=dict)
+    histogram: dict[str, int] = field(default_factory=dict)
+    percentile: dict[str, float] = field(default_factory=dict)
+    recommended_threshold: float = 0.0
+    recommended_threshold_rationale: str = ""
     confidence_scores: list[CompanyConfidence] = field(default_factory=list)
     threshold_impacts: list[ThresholdImpact] = field(default_factory=list)
     formula: dict[str, float] = field(default_factory=dict)
+    generated_at: str = ""
 
 
-def _external_id_count(entity: Any) -> int:
+def _external_id_count(entity):
     attrs = entity.attributes or {}
     return sum(1 for key in EXTERNAL_ID_KEYS.values() if attrs.get(key))
 
 
-def _score_sources(sources: set[str]) -> float:
-    """Reward evidence coming from multiple independent importers/pipelines."""
-    return min(len(sources) / 3.0, 1.0)
-
-
-def _evidence_confidence(neighbor_rel) -> float:
-    """Extract confidence from IdentityEvidence if present, else relation confidence."""
+def _evidence_confidence(neighbor_rel):
     if neighbor_rel.attributes:
         try:
             ev = IdentityEvidence.from_dict(neighbor_rel.attributes)
@@ -93,16 +101,15 @@ def _evidence_confidence(neighbor_rel) -> float:
     return float(neighbor_rel.confidence or 0.5)
 
 
-def compute_company_confidence(repo: Any, uid: str) -> CompanyConfidence:
-    entity = repo.get(uid)
-    aliases: list[tuple[Any, Any]] = repo.get_neighbors(
-        uid, direction="in", kinds=[BizRelationKind.ALIAS_OF]
-    )
-    same_as: list[tuple[Any, Any]] = repo.get_neighbors(
-        uid, direction="both", kinds=[BizRelationKind.SAME_AS]
-    )
+def _score_sources(sources):
+    return min(len(sources) / 3.0, 1.0)
 
-    # Business activity edges
+
+def compute_company_confidence(repo, uid):
+    entity = repo.get(uid)
+    aliases = repo.get_neighbors(uid, direction="in", kinds=[BizRelationKind.ALIAS_OF])
+    same_as = repo.get_neighbors(uid, direction="both", kinds=[BizRelationKind.SAME_AS])
+
     biz_kinds = {
         BizRelationKind.AWARDED_TO,
         BizRelationKind.SUBMITTED_BID,
@@ -112,27 +119,21 @@ def compute_company_confidence(repo: Any, uid: str) -> CompanyConfidence:
     }
     out_edges = repo.get_neighbors(uid, direction="out")
     in_edges = repo.get_neighbors(uid, direction="in")
-    relationships = [
-        (rel, ent)
-        for rel, ent in (out_edges + in_edges)
-        if rel.kind in biz_kinds
-    ]
+    relationships = [(rel, ent) for rel, ent in (out_edges + in_edges) if rel.kind in biz_kinds]
 
-    sources: set[str] = set()
+    sources = set()
     if entity.source:
         sources.add(entity.source)
     for rel, _ in aliases + same_as + relationships:
         if rel.source:
             sources.add(rel.source)
 
-    # Component scores
     id_score = min(_external_id_count(entity) * 0.25, 1.0)
     alias_score = min(sum(_evidence_confidence(rel) for rel, _ in aliases) / 2.0, 1.0)
     same_as_score = min(sum(_evidence_confidence(rel) for rel, _ in same_as) / 2.0, 1.0)
     relationship_score = min(len(relationships) / 10.0, 1.0)
     source_score = _score_sources(sources)
 
-    # Weighted blend (prototype weights)
     weights = {
         "external_ids": 0.30,
         "aliases": 0.25,
@@ -167,92 +168,134 @@ def compute_company_confidence(repo: Any, uid: str) -> CompanyConfidence:
     )
 
 
+def _percentile(values, pct):
+    if not values:
+        return 0.0
+    sorted_vals = sorted(values)
+    k = (len(sorted_vals) - 1) * (pct / 100.0)
+    f = int(k)
+    c = min(f + 1, len(sorted_vals) - 1)
+    if f == c:
+        return round(sorted_vals[f], 3)
+    return round(sorted_vals[f] + (k - f) * (sorted_vals[c] - sorted_vals[f]), 3)
+
+
+def _recommend_threshold(distribution, percentile):
+    """Recommend the lowest threshold that keeps at least 80% of companies."""
+    p80 = percentile.get("p80", 0.5)
+    # Prefer a clean threshold near p80 but not below p50.
+    p50 = percentile.get("p50", 0.5)
+    if p80 >= 0.5:
+        return round(max(p80, 0.5), 2)
+    return round(max(p50, 0.25), 2)
+
+
 def analyze_graph(db_path: Path) -> GraphConfidenceReport:
     repo = open_repository(db_path)
 
-    report = GraphConfidenceReport(graph_path=str(db_path))
-    report.formula = {
-        "external_ids": 0.30,
-        "aliases": 0.25,
-        "same_as_candidates": 0.10,
-        "business_relationships": 0.20,
-        "source_diversity": 0.15,
+    report = GraphConfidenceReport(
+        graph_path=str(db_path),
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        formula={
+            "external_ids": 0.30,
+            "aliases": 0.25,
+            "same_as_candidates": 0.10,
+            "business_relationships": 0.20,
+            "source_diversity": 0.15,
+        },
+    )
+
+    company_uids = []
+    offset = 0
+    while True:
+        batch = repo.find(kind=BizEntityKind.COMPANY, limit=1000, offset=offset)
+        if not batch:
+            break
+        company_uids.extend(ent.uid for ent in batch)
+        offset += len(batch)
+        if len(batch) < 1000:
+            break
+    report.total_company_nodes = len(company_uids)
+
+    scores = []
+    for uid in company_uids:
+        try:
+            scores.append(compute_company_confidence(repo, uid))
+        except Exception as exc:
+            print(f"WARN: failed to score {uid}: {exc}", file=sys.stderr)
+
+    scores.sort(key=lambda c: c.confidence, reverse=True)
+    report.confidence_scores = scores
+
+    buckets = Counter()
+    for s in scores:
+        if s.confidence >= 0.8:
+            buckets["0.8-1.0"] += 1
+        elif s.confidence >= 0.5:
+            buckets["0.5-0.8"] += 1
+        elif s.confidence >= 0.25:
+            buckets["0.25-0.5"] += 1
+        else:
+            buckets["0.0-0.25"] += 1
+    report.score_distribution = dict(buckets)
+
+    histogram = Counter()
+    for s in scores:
+        for i in range(len(HISTOGRAM_BUCKETS) - 1):
+            low, high = HISTOGRAM_BUCKETS[i], HISTOGRAM_BUCKETS[i + 1]
+            if low <= s.confidence < high or (high == 1.0 and s.confidence == 1.0):
+                key = f"{low:.1f}-{high:.1f}"
+                histogram[key] += 1
+                break
+    report.histogram = {k: histogram[k] for k in [f"{HISTOGRAM_BUCKETS[i]:.1f}-{HISTOGRAM_BUCKETS[i+1]:.1f}" for i in range(len(HISTOGRAM_BUCKETS)-1)]}
+
+    values = [s.confidence for s in scores]
+    report.percentile = {
+        "p50": _percentile(values, 50),
+        "p90": _percentile(values, 90),
+        "p95": _percentile(values, 95),
+        "p99": _percentile(values, 99),
     }
 
-    try:
-        # List all company nodes in batches
-        company_uids: list[str] = []
-        offset = 0
-        while True:
-            batch = repo.find(kind=BizEntityKind.COMPANY, limit=1000, offset=offset)
-            if not batch:
-                break
-            company_uids.extend(ent.uid for ent in batch)
-            offset += len(batch)
-            if len(batch) < 1000:
-                break
-        report.total_company_nodes = len(company_uids)
+    report.recommended_threshold = _recommend_threshold(report.score_distribution, report.percentile)
+    report.recommended_threshold_rationale = (
+        f"Threshold {report.recommended_threshold} is chosen to retain the majority of "
+        f"legitimate companies while excluding the lowest-confidence tail. It is near the "
+        f"p80 ({report.percentile['p80']}) and never below p50. Tune after reviewing excluded samples."
+    )
 
-        scores: list[CompanyConfidence] = []
-        for uid in company_uids:
-            try:
-                scores.append(compute_company_confidence(repo, uid))
-            except Exception as exc:
-                print(f"WARN: failed to score {uid}: {exc}", file=sys.stderr)
-
-        # Sort by confidence descending
-        scores.sort(key=lambda c: c.confidence, reverse=True)
-        report.confidence_scores = scores
-
-        # Distribution buckets
-        buckets = Counter()
-        for s in scores:
-            if s.confidence >= 0.8:
-                buckets["0.8-1.0"] += 1
-            elif s.confidence >= 0.5:
-                buckets["0.5-0.8"] += 1
-            elif s.confidence >= 0.25:
-                buckets["0.25-0.5"] += 1
-            else:
-                buckets["0.0-0.25"] += 1
-        report.score_distribution = dict(buckets)
-
-        # Threshold simulation
-        for threshold in CONFIDENCE_THRESHOLDS:
-            above = [s for s in scores if s.confidence >= threshold]
-            below = [s for s in scores if s.confidence < threshold]
-            pct = (len(above) / len(scores) * 100) if scores else 0.0
-            report.threshold_impacts.append(
-                ThresholdImpact(
-                    threshold=threshold,
-                    companies_above=len(above),
-                    companies_below=len(below),
-                    pct_above=round(pct, 2),
-                    sample_excluded=[
-                        {
-                            "uid": s.uid,
-                            "name": s.name,
-                            "confidence": s.confidence,
-                            "breakdown": s.score_breakdown,
-                        }
-                        for s in below[:10]
-                    ],
-                )
+    for threshold in CONFIDENCE_THRESHOLDS:
+        above = [s for s in scores if s.confidence >= threshold]
+        below = [s for s in scores if s.confidence < threshold]
+        pct = (len(above) / len(scores) * 100) if scores else 0.0
+        report.threshold_impacts.append(
+            ThresholdImpact(
+                threshold=threshold,
+                companies_above=len(above),
+                companies_below=len(below),
+                pct_above=round(pct, 2),
+                sample_excluded=[
+                    {
+                        "uid": s.uid,
+                        "name": s.name,
+                        "confidence": s.confidence,
+                        "breakdown": s.score_breakdown,
+                    }
+                    for s in below[:10]
+                ],
             )
-
-    finally:
-        pass  # SQLite repository has no close(); connection closes at process exit
+        )
 
     return report
 
 
-def main() -> None:
+def main():
     if len(sys.argv) > 1:
         db_path = Path(sys.argv[1])
     else:
         db_path = REPO_ROOT / ".tkg" / "graph.db"
 
-    if not db_path.exists():
+    if not db_path.exists() and not os.environ.get("DATABASE_URL"):
         print(f"Graph database not found: {db_path}", file=sys.stderr)
         print("Usage: python scripts/prototype_graph_confidence.py <path/to/graph.db>", file=sys.stderr)
         sys.exit(1)
