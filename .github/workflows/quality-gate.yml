@@ -62,45 +62,7 @@ jobs:
 
       - name: Deployment readiness summary
         if: always()
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import time, xml.etree.ElementTree as ET
-          reports = Path("reports")
-          reports.mkdir(exist_ok=True)
-          junit = reports / "unit-junit.xml"
-          tests = failures = errors = 0
-          elapsed = 0.0
-          if junit.exists():
-              root = ET.parse(junit).getroot()
-              suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
-              for s in suites:
-                  tests += int(s.attrib.get("tests", 0))
-                  failures += int(s.attrib.get("failures", 0))
-                  errors += int(s.attrib.get("errors", 0))
-                  elapsed += float(s.attrib.get("time", 0) or 0)
-          cov = "n/a"
-          cxml = reports / "coverage.xml"
-          if cxml.exists():
-              rate = ET.parse(cxml).getroot().attrib.get("line-rate")
-              if rate:
-                  cov = f"{float(rate)*100:.1f}%"
-          ready = failures == 0 and errors == 0 and tests > 0
-          text = f"""# Deployment readiness — `tenderscope-kg`
-
-Generated: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}
-
-**Ready for deploy:** {'YES' if ready else 'NO'}
-
-- Tests: {tests}
-- Failures: {failures}
-- Errors: {errors}
-- Time: {elapsed:.1f}s
-- Coverage (line-rate): {cov}
-"""
-          (reports / "deployment-readiness.md").write_text(text, encoding="utf-8")
-          print(text)
-          PY
+        run: python scripts/ci_summary.py
 
       - name: Upload CI reports
         if: always()
