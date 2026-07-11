@@ -32,7 +32,6 @@ def result():
 
 
 def test_file_entity(result):
-    assert False, 'intentional CI e2e break'
     files = [e for e in result.entities if e.kind == EntityKind.FILE]
     assert len(files) == 1
 
