@@ -38,7 +38,16 @@ def test_v1_health_returns_200(client: TestClient) -> None:
     response = client.get("/api/v1/graph/health")
     assert response.status_code == 200
     body = response.json()
-    assert "business_graph" in body or "error" in body
+    assert body["status"] == "alive"
+
+
+def test_v1_ready_returns_200(client: TestClient) -> None:
+    response = client.get("/api/v1/graph/ready")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert "engines" in body
+    assert "repository" in body
 
 
 def test_legacy_health_returns_200(client: TestClient) -> None:

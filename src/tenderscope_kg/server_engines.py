@@ -45,6 +45,31 @@ class EngineSet:
     oie: OpportunityIntelligenceEngine
     ede: ExecutiveDecisionEngine
 
+    def health(self) -> dict:
+        """
+        Aggregate readiness check for the EngineSet.
+
+        Returns per-engine status (all present engines report ``ok``) and a
+        repository connectivity probe via ``biz.graph_statistics()``.
+        """
+        engine_statuses: dict[str, str] = {}
+        for name in ("biz", "cie", "rie", "cei", "bie", "oie", "ede"):
+            engine = getattr(self, name)
+            engine_statuses[name] = "ok" if engine is not None else "down"
+
+        try:
+            self.biz.graph_statistics()
+            repo_status = "ok"
+        except Exception as exc:  # noqa: BLE001
+            repo_status = f"down: {exc}"
+
+        overall = "ok" if repo_status == "ok" and all(s == "ok" for s in engine_statuses.values()) else "degraded"
+        return {
+            "status": overall,
+            "repository": repo_status,
+            "engines": engine_statuses,
+        }
+
 
 def build_engines(repo: BizRepository) -> EngineSet:
     """

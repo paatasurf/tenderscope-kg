@@ -112,11 +112,20 @@ def create_rest_app(engines: "EngineSet") -> FastAPI:
     )
     app.add_middleware(LegacyDeprecationMiddleware)
 
-    # ── Health ────────────────────────────────────────────────────────────────
+    # ── Health / readiness ────────────────────────────────────────────────────
 
     @app.get("/health", tags=["meta"])
     def graph_health() -> dict:
-        return engines.biz.graph_statistics()
+        """Liveness probe. Returns 200 if the process is up."""
+        return {"status": "alive", "service": "tenderscope-kg"}
+
+    @app.get("/ready", tags=["meta"])
+    def graph_ready() -> dict:
+        """Readiness probe. Verifies repository connectivity and all engines."""
+        report = engines.health()
+        if report["status"] != "ok":
+            raise HTTPException(status_code=503, detail=report)
+        return report
 
     # ── Company list ──────────────────────────────────────────────────────────
 
