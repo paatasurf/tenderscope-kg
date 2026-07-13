@@ -71,6 +71,40 @@ class TestEntityContract:
         assert c2 is False
         assert e1.uid == e2.uid
 
+    def test_company_with_scraper_id_dedupes_by_scraper_id_not_name(self, repo):
+        e1, c1 = repo.put_entity(
+            BizEntityKind.COMPANY,
+            "Same Name Construction",
+            attributes={"scraper_id": 101},
+        )
+        e2, c2 = repo.put_entity(
+            BizEntityKind.COMPANY,
+            "Same Name Construction",
+            attributes={"scraper_id": 202},
+        )
+        assert c1 is True
+        assert c2 is True
+        assert e1.uid != e2.uid
+
+    def test_company_with_scraper_id_keeps_uid_when_name_changes(self, repo):
+        e1, c1 = repo.put_entity(
+            BizEntityKind.COMPANY,
+            "Old Name Ltd.",
+            attributes={"scraper_id": 101},
+        )
+        e2, c2 = repo.put_entity(
+            BizEntityKind.COMPANY,
+            "New Name Ltd.",
+            attributes={"scraper_id": 101, "city": "Vancouver"},
+        )
+        assert c1 is True
+        assert c2 is False
+        assert e1.uid == e2.uid
+        assert e2.name == "New Name Ltd."
+        assert e2.canonical_name == "new name ltd."
+        assert e2.attributes["scraper_id"] == 101
+        assert e2.attributes["city"] == "Vancouver"
+
     def test_dedup_different_kinds_not_same(self, repo):
         e1, _ = repo.put_entity(BizEntityKind.COMPANY, "Riverside")
         e2, _ = repo.put_entity(BizEntityKind.CITY, "Riverside")

@@ -67,6 +67,36 @@ def test_entity_dedup_by_canonical(repo):
     assert e1.uid == e2.uid
 
 
+def test_company_scraper_id_overrides_name_dedup(repo):
+    e1, c1 = repo.put_entity(
+        BizEntityKind.COMPANY,
+        "Same Name Construction",
+        attributes={"scraper_id": 101},
+    )
+    e2, c2 = repo.put_entity(
+        BizEntityKind.COMPANY,
+        "Same Name Construction",
+        attributes={"scraper_id": 202},
+    )
+    assert c1 is True
+    assert c2 is True
+    assert e1.uid != e2.uid
+
+
+def test_company_scraper_id_preserves_uid_on_name_change(repo):
+    e1, _ = repo.put_entity(BizEntityKind.COMPANY, "Old Name Ltd.", attributes={"scraper_id": 101})
+    e2, created = repo.put_entity(
+        BizEntityKind.COMPANY,
+        "New Name Ltd.",
+        attributes={"scraper_id": 101, "phone": "604-555-0100"},
+    )
+    assert created is False
+    assert e1.uid == e2.uid
+    assert e2.name == "New Name Ltd."
+    assert e2.canonical_name == "new name ltd."
+    assert e2.attributes["phone"] == "604-555-0100"
+
+
 def test_entity_different_kinds_not_deduped(repo):
     e1, _ = repo.put_entity(BizEntityKind.COMPANY, "Riverside")
     e2, _ = repo.put_entity(BizEntityKind.CITY, "Riverside")

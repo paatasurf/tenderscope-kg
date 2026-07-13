@@ -1,0 +1,244 @@
+"""BCScraperPGImporter identity-boundary regression tests."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from tenderscope_kg.domain import BizEntityKind, BizRelationKind
+from tenderscope_kg.importers.bc_scraper_pg_importer import BCScraperPGImporter
+from tests.fakes.repository import FakeBizRepository
+
+
+@pytest.fixture
+def repo() -> FakeBizRepository:
+    return FakeBizRepository()
+
+
+@pytest.fixture
+def importer(repo: FakeBizRepository) -> BCScraperPGImporter:
+    return BCScraperPGImporter(repo, conn=MagicMock())
+
+
+def test_lookup_company_uid_readonly_finds_existing_company(
+    importer: BCScraperPGImporter, repo: FakeBizRepository
+) -> None:
+    company, _ = repo.put_entity(BizEntityKind.COMPANY, "Ledcor Group Ltd.")
+    assert importer._lookup_company_uid_readonly("Ledcor Group Ltd.") == company.uid
+
+
+def test_lookup_company_uid_readonly_resolves_alias_to_canonical(
+    importer: BCScraperPGImporter, repo: FakeBizRepository
+) -> None:
+    canonical, _ = repo.put_entity(BizEntityKind.COMPANY, "Ledcor Construction")
+    alias, _ = repo.put_entity(BizEntityKind.COMPANY_ALIAS, "Ledcor DBA Name")
+    repo.put_relation(alias.uid, BizRelationKind.ALIAS_OF, canonical.uid)
+    assert importer._lookup_company_uid_readonly("Ledcor DBA Name") == canonical.uid
+
+
+def test_lookup_company_uid_readonly_returns_none_for_unknown_name(
+    importer: BCScraperPGImporter,
+) -> None:
+    assert importer._lookup_company_uid_readonly("Totally Unknown Contractor Ltd.") is None
+
+
+def test_lookup_company_uid_readonly_never_calls_resolve_company_uid(
+    importer: BCScraperPGImporter, repo: FakeBizRepository
+) -> None:
+    repo.resolve_company_uid = MagicMock(  # type: ignore[method-assign]
+        side_effect=AssertionError("CREATE path must not run")
+    )
+    assert importer._lookup_company_uid_readonly("Unknown Name Inc.") is None
+    repo.resolve_company_uid.assert_not_called()
+
+
+def test_official_importer_module_has_no_resolve_company_uid_calls() -> None:
+    import inspect
+
+    from tenderscope_kg.importers import bc_scraper_pg_importer as mod
+
+    source = inspect.getsource(mod)
+    assert "resolve_company_uid" not in source
+
+
+class _RowsCursor:
+    def __init__(self, rows: list[tuple]) -> None:
+        self._rows = list(rows)
+        self._idx = 0
+
+    def execute(self, _query: str) -> None:
+        self._idx = 0
+
+    def fetchmany(self, size: int) -> list[tuple]:
+        batch = self._rows[self._idx : self._idx + size]
+        self._idx += size
+        return batch
+
+    def close(self) -> None:
+        return None
+
+
+class _RowsConnection:
+    def __init__(self, rows: list[tuple]) -> None:
+        self._rows = rows
+
+    def cursor(self) -> _RowsCursor:
+        return _RowsCursor(self._rows)
+
+
+def _company_row(
+    db_id: int,
+    display_name: str,
+    *,
+    entity_role: str = "canonical",
+    canonical_company_id: int | None = None,
+) -> tuple:
+    return (
+        db_id,
+        display_name,
+        display_name,
+        entity_role,
+        canonical_company_id,
+        None,
+        None,
+        None,
+        None,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+    )
+
+
+def test_company_import_uses_scraper_id_not_name_as_identity_key(repo: FakeBizRepository) -> None:
+    importer = BCScraperPGImporter(
+        repo,
+        conn=_RowsConnection(
+            [
+                _company_row(101, "Same Name Construction"),
+                _company_row(202, "Same Name Construction"),
+            ]
+        ),
+    )
+
+    result = importer._import_companies()
+
+    companies = repo.find(kind=BizEntityKind.COMPANY)
+    assert result.errors == []
+    assert result.entities_created == 2
+    assert len(companies) == 2
+    assert {c.attributes["scraper_id"] for c in companies} == {101, 202}
+    assert len({c.uid for c in companies}) == 2
+    assert {c.canonical_name for c in companies} == {"same name construction"}
+
+
+def test_company_import_preserves_uid_when_scraper_company_name_changes(repo: FakeBizRepository) -> None:
+    first = BCScraperPGImporter(repo, conn=_RowsConnection([_company_row(101, "Old Name Ltd.")]))
+    first_result = first._import_companies()
+    original = repo.find_by_attribute("scraper_id", 101, kind=BizEntityKind.COMPANY, limit=1)[0]
+
+    second = BCScraperPGImporter(repo, conn=_RowsConnection([_company_row(101, "New Name Ltd.")]))
+    second_result = second._import_companies()
+    updated = repo.find_by_attribute("scraper_id", 101, kind=BizEntityKind.COMPANY, limit=1)[0]
+
+    assert first_result.entities_created == 1
+    assert second_result.entities_created == 0
+    assert second_result.entities_updated == 1
+    assert updated.uid == original.uid
+    assert updated.name == "New Name Ltd."
+    assert updated.canonical_name == "new name ltd."
+
+
+def test_probable_person_does_not_create_company_node(repo: FakeBizRepository) -> None:
+    importer = BCScraperPGImporter(
+        repo,
+        conn=_RowsConnection([_company_row(301, "John Smith", entity_role="probable_person")]),
+    )
+
+    result = importer._import_companies()
+
+    assert repo.find(kind=BizEntityKind.COMPANY) == []
+    assert result.entities_created == 0
+    assert any("probable_person" in warning for warning in result.warnings)
+    assert 301 not in importer._company_id_to_uid
+
+
+def test_standalone_projects_as_company(repo: FakeBizRepository) -> None:
+    importer = BCScraperPGImporter(
+        repo,
+        conn=_RowsConnection([_company_row(401, "Local Builder Inc.", entity_role="standalone")]),
+    )
+
+    result = importer._import_companies()
+
+    companies = repo.find(kind=BizEntityKind.COMPANY)
+    assert result.errors == []
+    assert result.entities_created == 1
+    assert len(companies) == 1
+    assert companies[0].attributes["entity_role"] == "standalone"
+    assert companies[0].attributes["scraper_id"] == 401
+
+
+def test_empty_entity_role_projects_as_standalone(repo: FakeBizRepository) -> None:
+    importer = BCScraperPGImporter(
+        repo,
+        conn=_RowsConnection([_company_row(501, "Legacy Row Ltd.", entity_role="")]),
+    )
+
+    result = importer._import_companies()
+
+    companies = repo.find(kind=BizEntityKind.COMPANY)
+    assert result.entities_created == 1
+    assert len(companies) == 1
+    assert companies[0].attributes["scraper_id"] == 501
+    assert "entity_role" not in companies[0].attributes
+
+
+def test_unsupported_entity_role_skipped_with_warning(repo: FakeBizRepository) -> None:
+    importer = BCScraperPGImporter(
+        repo,
+        conn=_RowsConnection([_company_row(601, "Mystery Row", entity_role="legacy_bucket")]),
+    )
+
+    result = importer._import_companies()
+
+    assert repo.find(kind=BizEntityKind.COMPANY) == []
+    assert result.entities_created == 0
+    assert any("unsupported entity_role" in warning for warning in result.warnings)
+
+
+def test_applicant_alias_projects_as_company_alias_not_company(repo: FakeBizRepository) -> None:
+    importer = BCScraperPGImporter(
+        repo,
+        conn=_RowsConnection(
+            [
+                _company_row(701, "Canonical Co", entity_role="canonical"),
+                _company_row(702, "DBA Alias Name", entity_role="applicant_alias", canonical_company_id=701),
+            ]
+        ),
+    )
+
+    result = importer._import_companies()
+
+    companies = repo.find(kind=BizEntityKind.COMPANY)
+    aliases = repo.find(kind=BizEntityKind.COMPANY_ALIAS)
+    assert result.errors == []
+    assert len(companies) == 1
+    assert len(aliases) == 1
+    assert companies[0].attributes["scraper_id"] == 701
+    assert aliases[0].attributes["entity_role"] == "applicant_alias"
+    assert importer._company_id_to_uid[702] == companies[0].uid
+
+
+def test_entity_role_dispatch_is_explicit_no_implicit_fallthrough() -> None:
+    import inspect
+
+    source = inspect.getsource(BCScraperPGImporter._import_companies)
+
+    assert "_ENTITY_ROLE_PROBABLE_PERSON" in source
+    assert "_COMPANY_PROJECTABLE_ROLES" in source
+    assert "_normalize_sor_entity_role(entity_role)" in source
+    assert 'if _s(entity_role) == "applicant_alias"' not in source

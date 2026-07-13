@@ -6,7 +6,9 @@ Reads directly from public.* tables in the shared Railway PostgreSQL database
 BizRepository.  This importer is READ-ONLY with respect to public.*.
 
 Tables consumed:
-    public.companies        → BizEntityKind.COMPANY (canonical entities)
+    public.companies        → BizEntityKind.COMPANY (canonical/standalone only)
+                            → BizEntityKind.COMPANY_ALIAS (applicant_alias)
+                            → skipped: probable_person, unsupported roles
     public.tenders          → BizEntityKind.TENDER
     public.commercial_tenders → BizEntityKind.TENDER (merged with tenders)
     public.arch_tenders     → BizEntityKind.TENDER (merged)
@@ -17,7 +19,9 @@ Relations created:
     COMPANY  --AWARDED_TO-->    CONTRACT  (from contract_awards.company_id)
     COMPANY  --HAS_PERMIT-->    PERMIT    (from permits.company_id)
     TENDER   --ISSUED_BY-->     COMPANY   (from tenders.organization)
-    CONTRACT --AWARDED_TO-->    COMPANY   (from contract_awards.winner_company)
+    CONTRACT --AWARDED_TO-->    COMPANY   (from contract_awards.winner_company
+                                 when that name already exists in the graph;
+                                 never creates new COMPANY nodes)
 
 Source tag: "bc_scraper_pg"
 """
@@ -39,6 +43,32 @@ from .base import BaseImporter
 logger = logging.getLogger(__name__)
 
 _SOURCE = "bc_scraper_pg"
+
+# Mirrors bc-tender-scraper/db/company_canonical_constants.py (SoR CHECK constraint).
+_ENTITY_ROLE_CANONICAL = "canonical"
+_ENTITY_ROLE_APPLICANT_ALIAS = "applicant_alias"
+_ENTITY_ROLE_STANDALONE = "standalone"
+_ENTITY_ROLE_PROBABLE_PERSON = "probable_person"
+_SOR_ENTITY_ROLES = frozenset(
+    {
+        _ENTITY_ROLE_CANONICAL,
+        _ENTITY_ROLE_APPLICANT_ALIAS,
+        _ENTITY_ROLE_STANDALONE,
+        _ENTITY_ROLE_PROBABLE_PERSON,
+    }
+)
+_COMPANY_PROJECTABLE_ROLES = frozenset({_ENTITY_ROLE_CANONICAL, _ENTITY_ROLE_STANDALONE})
+
+
+def _normalize_sor_entity_role(raw: Any) -> str:
+    """Return a known SoR entity_role string.
+
+    Empty/NULL uses the SoR column default (migration 014: standalone).
+    """
+    role = _s(raw)
+    if not role:
+        return _ENTITY_ROLE_STANDALONE
+    return role
 
 
 def _s(val: Any) -> str:
@@ -98,6 +128,24 @@ class BCScraperPGImporter(BaseImporter):
             self._conn = conn
         self._batch_size = batch_size
         self._uid_snapshot: dict[tuple[str, str], str] = uid_snapshot or {}
+
+    def _lookup_company_uid_readonly(self, name: str) -> str | None:
+        """Resolve a company name to an existing graph UID without creating entities.
+
+        Used only for linking contract awards to companies already projected from
+        public.companies.  Identity CREATE belongs to bc-tender-scraper Registry.
+        """
+        canon = canonicalize(name)
+        existing = self.repo.find_by_canonical(BizEntityKind.COMPANY, canon)
+        if existing is not None:
+            return existing.uid
+
+        alias = self.repo.find_by_canonical(BizEntityKind.COMPANY_ALIAS, canon)
+        if alias is not None:
+            resolved = self.repo.resolve_alias(alias.uid)
+            if resolved is not None and resolved.kind == BizEntityKind.COMPANY:
+                return resolved.uid
+        return None
 
     def _get_source_conn(self) -> Any:
         """Open a fresh source connection.
@@ -213,22 +261,27 @@ class BCScraperPGImporter(BaseImporter):
 
     def _import_companies(self) -> ImportResult:
         """
-        Two-pass import of public.companies.
+        Two-pass import of public.companies — passive SoR projection only.
 
-        Pass 1 — canonical rows (entity_role = 'canonical' or NULL):
-            Inserted as BizEntityKind.COMPANY.  These are the permanent
-            identity nodes for the entire platform.
+        Pass 1 — company-projectable rows (entity_role canonical or standalone):
+            Inserted as BizEntityKind.COMPANY keyed by scraper_id.
 
-        Pass 2 — alias rows (entity_role = 'applicant_alias'):
+        Pass 1 skip — probable_person:
+            Not projected; SoR marks these as person rows, not companies.
+
+        Pass 1 skip — unsupported entity_role values:
+            Warned explicitly; never projected.
+
+        Pass 2 — alias rows (entity_role = applicant_alias):
             Inserted as BizEntityKind.COMPANY_ALIAS.
             Each alias gets a single ALIAS_OF edge → its canonical COMPANY.
             Aliases are NOT primary company nodes and will not appear in
             company listings or be used as relation targets.
 
-        After both passes, self._company_id_to_uid maps every scraper id
-        (canonical AND alias) to the canonical COMPANY uid.  All downstream
-        steps (permits, contracts, tenders) therefore always attach to the
-        canonical node, never to an alias.
+        After both passes, self._company_id_to_uid maps scraper ids for
+        projected companies and aliases to a COMPANY uid.  Downstream steps
+        (permits, contracts, tenders) attach only when the scraper id was
+        projected; probable_person rows are intentionally absent.
         """
         result = ImportResult(importer=f"{self.name}:companies")
 
@@ -337,8 +390,29 @@ class BCScraperPGImporter(BaseImporter):
                 dominant_sector,
             ) = row
 
-            if _s(entity_role) == "applicant_alias":
+            role = _normalize_sor_entity_role(entity_role)
+
+            if role == _ENTITY_ROLE_APPLICANT_ALIAS:
                 continue  # handled in Pass 2
+
+            if role == _ENTITY_ROLE_PROBABLE_PERSON:
+                result.warnings.append(
+                    f"companies.id={db_id}: entity_role=probable_person — "
+                    "not projected as COMPANY (SoR person row)"
+                )
+                continue
+
+            if role not in _COMPANY_PROJECTABLE_ROLES:
+                if role in _SOR_ENTITY_ROLES:
+                    result.warnings.append(
+                        f"companies.id={db_id}: entity_role={role!r} is known in SoR "
+                        "but has no graph COMPANY projection, skipping"
+                    )
+                else:
+                    result.warnings.append(
+                        f"companies.id={db_id}: unsupported entity_role={role!r}, skipping"
+                    )
+                continue
 
             name = _s(display_name) or _s(raw_name)
             if not name:
@@ -378,7 +452,7 @@ class BCScraperPGImporter(BaseImporter):
                 else:
                     result.entities_updated += 1
             except Exception as exc:
-                result.errors.append(f"companies.id={db_id} (canonical): {exc}")
+                result.errors.append(f"companies.id={db_id} (company): {exc}")
 
         # ── Pass 2: alias companies ────────────────────────────────────────
         for row in all_rows:
@@ -813,27 +887,29 @@ class BCScraperPGImporter(BaseImporter):
                                 else:
                                     result.relations_updated += 1
 
-                            # Resolve winner company name → canonical UID.
-                            # resolve_company_uid() is the single safe entry point:
-                            # it checks COMPANY, then COMPANY_ALIAS, then creates
-                            # a new COMPANY only if the name is genuinely unknown.
+                            # Link contract → winner only when the company already
+                            # exists in the graph (projected from SoR).  Never CREATE.
                             winner_name = _s(winner_company)
                             if winner_name:
-                                winner_e = self.repo.resolve_company_uid(
-                                    winner_name,
-                                    source=_SOURCE,
-                                    attributes={"source_table": "contract_awards"},
-                                )
-                                _, rc2 = self.repo.put_relation(
-                                    source_uid=contract_e.uid,
-                                    kind=BizRelationKind.AWARDED_TO,
-                                    target_uid=winner_e.uid,
-                                    source=_SOURCE,
-                                )
-                                if rc2:
-                                    result.relations_created += 1
+                                winner_uid = self._lookup_company_uid_readonly(winner_name)
+                                if winner_uid is not None:
+                                    _, rc2 = self.repo.put_relation(
+                                        source_uid=contract_e.uid,
+                                        kind=BizRelationKind.AWARDED_TO,
+                                        target_uid=winner_uid,
+                                        source=_SOURCE,
+                                    )
+                                    if rc2:
+                                        result.relations_created += 1
+                                    else:
+                                        result.relations_updated += 1
                                 else:
-                                    result.relations_updated += 1
+                                    result.warnings.append(
+                                        f"contract_awards.id={db_id}: "
+                                        f"unresolved winner_company={winner_name!r}; "
+                                        "no existing graph COMPANY match; "
+                                        "contract→winner edge skipped"
+                                    )
 
                         except Exception as exc:
                             result.errors.append(f"contract_awards.id={db_id}: {exc}")

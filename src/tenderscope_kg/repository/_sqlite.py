@@ -235,7 +235,11 @@ class BizRepositorySQLite(BizRepository):
         now = _now()
         attrs = attributes or {}
 
-        existing = self.find_by_canonical(kind, canonical)
+        if kind == BizEntityKind.COMPANY and attrs.get("scraper_id") is not None:
+            matches = self.find_by_attribute("scraper_id", attrs["scraper_id"], kind=kind, limit=1)
+            existing = matches[0] if matches else None
+        else:
+            existing = self.find_by_canonical(kind, canonical)
         created = existing is None
 
         if created:
@@ -285,10 +289,11 @@ class BizRepositorySQLite(BizRepository):
             )
             self._conn.execute(
                 """UPDATE biz_entities
-                   SET name=?, attributes=?, source=?, confidence=?, updated_at=?
+                   SET name=?, canonical_name=?, attributes=?, source=?, confidence=?, updated_at=?
                    WHERE uid=?""",
                 (
                     name,
+                    canonical,
                     json.dumps(merged),
                     entity.source,
                     entity.confidence,
