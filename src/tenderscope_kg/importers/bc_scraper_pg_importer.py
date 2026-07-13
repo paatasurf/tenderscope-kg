@@ -733,6 +733,63 @@ class BCScraperPGImporter(BaseImporter):
         )
         return result
 
+    def _import_permits_batch(self, after_id: int = 0, limit: int = 5000) -> tuple[ImportResult, int, bool]:
+        """
+        Import one bounded slice of public.permits, ordered by id, for use
+        behind an HTTP endpoint where the caller must bound request duration
+        (e.g. Railway's public-edge timeout).  Row processing is identical to
+        _import_permits() — this only adds pagination around the same
+        _process_permit_batch() call.
+
+        Requires self._company_id_to_uid to already be populated (callers
+        must run _import_companies() first, as run() does).
+
+        Returns (result, last_id, has_more):
+            last_id:  highest permits.id processed in this batch (pass as the
+                      next call's after_id to resume; unchanged from the
+                      input after_id when the batch is empty).
+            has_more: True if more rows exist beyond this batch.
+        """
+        result = ImportResult(importer=f"{self.name}:permits_batch")
+        conn = self._get_source_conn()
+        try:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    """
+                    SELECT id, external_id, address, city, permit_type,
+                           project_value, applicant, contractor,
+                           lifecycle_status, source, company_id
+                    FROM public.permits
+                    WHERE id > %s
+                    ORDER BY id
+                    LIMIT %s
+                    """,
+                    (after_id, limit + 1),
+                )
+                rows = cur.fetchall()
+            finally:
+                cur.close()
+        finally:
+            self._close_source_conn(conn)
+
+        has_more = len(rows) > limit
+        batch = rows[:limit]
+        last_id = batch[-1][0] if batch else after_id
+        if batch:
+            self._process_permit_batch(batch, result)
+
+        logger.info(
+            "permits_batch: after_id=%d limit=%d processed=%d created=%d updated=%d has_more=%s",
+            after_id,
+            limit,
+            len(batch),
+            result.entities_created,
+            result.entities_updated,
+            has_more,
+        )
+        return result, last_id, has_more
+
     def _process_permit_batch(self, rows: list, result: ImportResult) -> None:
         """Process one batch of permit rows inside a single transaction."""
         with self.repo.transaction():

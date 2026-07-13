@@ -242,3 +242,118 @@ def test_entity_role_dispatch_is_explicit_no_implicit_fallthrough() -> None:
     assert "_COMPANY_PROJECTABLE_ROLES" in source
     assert "_normalize_sor_entity_role(entity_role)" in source
     assert 'if _s(entity_role) == "applicant_alias"' not in source
+
+
+def _permit_row(
+    db_id: int,
+    external_id: str = "",
+    *,
+    company_id: int | None = None,
+) -> tuple:
+    return (
+        db_id,
+        external_id,
+        "",  # address
+        "",  # city
+        "",  # permit_type
+        None,  # project_value
+        "",  # applicant
+        "",  # contractor
+        "",  # lifecycle_status
+        "",  # source
+        company_id,
+    )
+
+
+class _PermitsBatchCursor:
+    """Simulates `WHERE id > %s ORDER BY id LIMIT %s` over an in-memory row list."""
+
+    def __init__(self, rows: list[tuple]) -> None:
+        self._all_rows = sorted(rows, key=lambda r: r[0])
+        self._result: list[tuple] = []
+
+    def execute(self, _query: str, params: tuple | None = None) -> None:
+        after_id, fetch_limit = params
+        self._result = [r for r in self._all_rows if r[0] > after_id][:fetch_limit]
+
+    def fetchall(self) -> list[tuple]:
+        return self._result
+
+    def close(self) -> None:
+        return None
+
+
+class _PermitsBatchConnection:
+    def __init__(self, rows: list[tuple]) -> None:
+        self._rows = rows
+
+    def cursor(self) -> _PermitsBatchCursor:
+        return _PermitsBatchCursor(self._rows)
+
+
+def test_permits_batch_reports_has_more_when_rows_remain(repo: FakeBizRepository) -> None:
+    rows = [_permit_row(i) for i in range(1, 11)]  # ids 1..10
+    importer = BCScraperPGImporter(repo, conn=_PermitsBatchConnection(rows))
+    importer._company_id_to_uid = {}
+
+    result, last_id, has_more = importer._import_permits_batch(after_id=0, limit=5)
+
+    assert result.errors == []
+    assert result.entities_created == 5
+    assert last_id == 5
+    assert has_more is True
+
+
+def test_permits_batch_final_page_has_more_false(repo: FakeBizRepository) -> None:
+    rows = [_permit_row(i) for i in range(1, 11)]  # ids 1..10
+    importer = BCScraperPGImporter(repo, conn=_PermitsBatchConnection(rows))
+    importer._company_id_to_uid = {}
+
+    result, last_id, has_more = importer._import_permits_batch(after_id=5, limit=5)
+
+    assert result.entities_created == 5
+    assert last_id == 10
+    assert has_more is False
+
+
+def test_permits_batch_empty_tail_returns_after_id_unchanged(repo: FakeBizRepository) -> None:
+    rows = [_permit_row(i) for i in range(1, 4)]  # ids 1..3
+    importer = BCScraperPGImporter(repo, conn=_PermitsBatchConnection(rows))
+    importer._company_id_to_uid = {}
+
+    result, last_id, has_more = importer._import_permits_batch(after_id=3, limit=5)
+
+    assert result.entities_created == 0
+    assert last_id == 3
+    assert has_more is False
+
+
+def test_permits_batch_resumes_correctly_across_two_calls(repo: FakeBizRepository) -> None:
+    rows = [_permit_row(i) for i in range(1, 8)]  # ids 1..7
+    importer = BCScraperPGImporter(repo, conn=_PermitsBatchConnection(rows))
+    importer._company_id_to_uid = {}
+
+    first_result, after_id, has_more = importer._import_permits_batch(after_id=0, limit=4)
+    assert has_more is True
+    second_result, after_id, has_more = importer._import_permits_batch(after_id=after_id, limit=4)
+    assert has_more is False
+
+    from tenderscope_kg.domain import BizEntityKind
+
+    all_permits = repo.find(kind=BizEntityKind.PERMIT, limit=100)
+    assert first_result.entities_created + second_result.entities_created == 7
+    assert len(all_permits) == 7
+
+
+def test_permits_batch_attaches_has_permit_relation_like_full_import(repo: FakeBizRepository) -> None:
+    company, _ = repo.put_entity(BizEntityKind.COMPANY, "Batch Builder Ltd.")
+    importer = BCScraperPGImporter(
+        repo, conn=_PermitsBatchConnection([_permit_row(1, "PMT-1", company_id=42)])
+    )
+    importer._company_id_to_uid = {42: company.uid}
+
+    result, _last_id, _has_more = importer._import_permits_batch(after_id=0, limit=10)
+
+    assert result.relations_created == 1
+    neighbours = repo.get_neighbors(company.uid, kinds=[BizRelationKind.HAS_PERMIT])
+    assert len(neighbours) == 1
