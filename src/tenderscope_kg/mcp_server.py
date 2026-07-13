@@ -1740,20 +1740,16 @@ class KGServer:
 
         async def handle_verify(request: Request) -> JSONResponse:
             """Phase 1: verify read access to public.* tables."""
-            import psycopg2
-
             database_url = os.environ.get("DATABASE_URL", "").strip()
             if not database_url:
                 return JSONResponse({"error": "DATABASE_URL not set"}, status_code=503)
             try:
-                conn = psycopg2.connect(database_url)
                 from tenderscope_kg.importers.bc_scraper_pg_importer import (
                     BCScraperPGImporter,
                 )
 
-                importer = BCScraperPGImporter(repo=self.db.biz_repo, conn=conn)
+                importer = BCScraperPGImporter(repo=self.db.biz_repo, conn=database_url)
                 counts = importer.verify_access()
-                conn.close()
                 return JSONResponse({"status": "ok", "public_table_counts": counts})
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=500)
@@ -1763,8 +1759,6 @@ class KGServer:
             Runs in a thread executor so the event loop stays unblocked.
             """
             import asyncio
-
-            import psycopg2
 
             database_url = os.environ.get("DATABASE_URL", "").strip()
             if not database_url:
@@ -1779,12 +1773,8 @@ class KGServer:
                     BCScraperPGImporter,
                 )
 
-                conn = psycopg2.connect(database_url)
-                try:
-                    importer = BCScraperPGImporter(repo=biz_repo, conn=conn)
-                    return importer.run()
-                finally:
-                    conn.close()
+                importer = BCScraperPGImporter(repo=biz_repo, conn=database_url)
+                return importer.run()
 
             try:
                 loop = asyncio.get_event_loop()
