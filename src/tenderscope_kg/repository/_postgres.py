@@ -311,14 +311,25 @@ class BizRepositoryPG(BizRepository):
         now = _now()
 
         with self._cursor(conn) as cur:
-            cur.execute(
-                """
-                SELECT uid, attributes, source, confidence, created_at
-                FROM graph.biz_entities
-                WHERE kind = %s AND canonical_name = %s
-                """,
-                (kind.value, canonical),
-            )
+            if kind == BizEntityKind.COMPANY and attrs.get("scraper_id") is not None:
+                cur.execute(
+                    """
+                    SELECT uid, attributes, source, confidence, created_at
+                    FROM graph.biz_entities
+                    WHERE kind = %s AND attributes @> %s::jsonb
+                    LIMIT 1
+                    """,
+                    (kind.value, json.dumps({"scraper_id": attrs["scraper_id"]})),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT uid, attributes, source, confidence, created_at
+                    FROM graph.biz_entities
+                    WHERE kind = %s AND canonical_name = %s
+                    """,
+                    (kind.value, canonical),
+                )
             existing = cur.fetchone()
             created = existing is None
 
@@ -367,20 +378,21 @@ class BizRepositoryPG(BizRepository):
                     """
                     UPDATE graph.biz_entities
                     SET name = %s,
+                        canonical_name = %s,
                         attributes = %s::jsonb,
                         source = %s,
                         confidence = %s,
                         updated_at = %s
-                    WHERE kind = %s AND canonical_name = %s
+                    WHERE uid = %s
                     """,
                     (
                         name,
+                        canonical,
                         json.dumps(merged),
                         new_source,
                         new_confidence,
                         now,
-                        kind.value,
-                        canonical,
+                        ex["uid"],
                     ),
                 )
                 entity = BizEntity(

@@ -98,7 +98,11 @@ class FakeBizRepository(BizRepository):
         attrs = attributes or {}
         now = _now()
 
-        existing = self.find_by_canonical(kind, canonical)
+        if kind == BizEntityKind.COMPANY and attrs.get("scraper_id") is not None:
+            matches = self.find_by_attribute("scraper_id", attrs["scraper_id"], kind=kind, limit=1)
+            existing = matches[0] if matches else None
+        else:
+            existing = self.find_by_canonical(kind, canonical)
         created = existing is None
 
         if created:
