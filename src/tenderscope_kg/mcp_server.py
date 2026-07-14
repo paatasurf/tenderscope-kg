@@ -1821,23 +1821,16 @@ class KGServer:
                 )
 
                 importer = BCScraperPGImporter(repo=biz_repo, conn=database_url)
-                # Companies must be mapped first so HAS_PERMIT relations can
-                # attach — same order run() uses; companies import is small
-                # and fast, so re-running it per batch is cheap.
-                companies_result = importer._import_companies()
-                batch_result, last_id, has_more = importer._import_permits_batch(
-                    after_id=after_id, limit=limit
-                )
-                return companies_result, batch_result, last_id, has_more
+                # _import_permits_batch() resolves company_id -> uid itself,
+                # per-row, via direct graph lookups (find_by_attribute) — no
+                # need to re-run the full companies import on every batch.
+                return importer._import_permits_batch(after_id=after_id, limit=limit)
 
             try:
                 loop = asyncio.get_event_loop()
-                companies_result, batch_result, last_id, has_more = await loop.run_in_executor(
-                    None, _run_batch
-                )
+                batch_result, last_id, has_more = await loop.run_in_executor(None, _run_batch)
                 return JSONResponse(
                     {
-                        "companies": companies_result.to_dict(),
                         "permits_batch": batch_result.to_dict(),
                         "after_id": after_id,
                         "next_after_id": last_id,

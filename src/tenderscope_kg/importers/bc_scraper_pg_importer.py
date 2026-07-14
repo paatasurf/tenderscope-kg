@@ -733,6 +733,34 @@ class BCScraperPGImporter(BaseImporter):
         )
         return result
 
+    def _resolve_company_ids_for_batch(self, rows: list) -> None:
+        """
+        Populate self._company_id_to_uid for exactly the company_ids referenced
+        in this batch of rows (last column), via direct graph lookups.
+
+        Unlike _import_companies() (which walks and upserts all of
+        public.companies), this only resolves the handful of scraper company
+        ids actually referenced by the batch, using the existing
+        find_by_attribute()/resolve_alias() read APIs — no re-import needed.
+        Mirrors the same canonical-vs-alias resolution _import_companies()
+        performs when it populates this same dict.
+        """
+        if not hasattr(self, "_company_id_to_uid"):
+            self._company_id_to_uid: dict[int, str] = {}
+        distinct_ids = {
+            row[-1] for row in rows if row[-1] is not None and row[-1] not in self._company_id_to_uid
+        }
+        for cid in distinct_ids:
+            canonical = self.repo.find_by_attribute("scraper_id", cid, kind=BizEntityKind.COMPANY, limit=1)
+            if canonical:
+                self._company_id_to_uid[cid] = canonical[0].uid
+                continue
+            alias = self.repo.find_by_attribute("scraper_id", cid, kind=BizEntityKind.COMPANY_ALIAS, limit=1)
+            if alias:
+                resolved = self.repo.resolve_alias(alias[0].uid)
+                if resolved is not None:
+                    self._company_id_to_uid[cid] = resolved.uid
+
     def _import_permits_batch(self, after_id: int = 0, limit: int = 5000) -> tuple[ImportResult, int, bool]:
         """
         Import one bounded slice of public.permits, ordered by id, for use
@@ -741,8 +769,12 @@ class BCScraperPGImporter(BaseImporter):
         _import_permits() — this only adds pagination around the same
         _process_permit_batch() call.
 
-        Requires self._company_id_to_uid to already be populated (callers
-        must run _import_companies() first, as run() does).
+        Resolves company_id → uid per-batch via _resolve_company_ids_for_batch()
+        (direct graph lookups), so callers do NOT need to run
+        _import_companies() first — that would re-upsert the entire
+        public.companies table on every batch call, which is both unnecessary
+        and, at production scale, itself slow enough to risk exceeding the
+        same request timeout this batching exists to avoid.
 
         Returns (result, last_id, has_more):
             last_id:  highest permits.id processed in this batch (pass as the
@@ -777,6 +809,7 @@ class BCScraperPGImporter(BaseImporter):
         batch = rows[:limit]
         last_id = batch[-1][0] if batch else after_id
         if batch:
+            self._resolve_company_ids_for_batch(batch)
             self._process_permit_batch(batch, result)
 
         logger.info(

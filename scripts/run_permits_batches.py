@@ -28,9 +28,9 @@ import urllib.request
 DEFAULT_URL = "https://tenderscope-kg-production.up.railway.app"
 
 
-def _post(url: str) -> dict:
+def _post(url: str, timeout: float) -> dict:
     req = urllib.request.Request(url, method="POST")
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read())
 
 
@@ -39,6 +39,12 @@ def main() -> int:
     parser.add_argument("--url", default=DEFAULT_URL, help="Base URL of the deployment")
     parser.add_argument("--limit", type=int, default=5000, help="Permit rows per batch")
     parser.add_argument("--after-id", type=int, default=0, help="Resume after this permits.id")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=280.0,
+        help="Client-side read timeout per batch, in seconds (keep under Railway's ~300s public-edge limit)",
+    )
     args = parser.parse_args()
 
     after_id = args.after_id
@@ -52,12 +58,19 @@ def main() -> int:
         endpoint = f"{args.url}/api/import/permits/batch?after_id={after_id}&limit={args.limit}"
         t0 = time.time()
         try:
-            body = _post(endpoint)
+            body = _post(endpoint, args.timeout)
         except urllib.error.HTTPError as exc:
             print(f"batch {batch_num}: HTTP {exc.code} — {exc.read().decode(errors='replace')}")
             return 1
         except urllib.error.URLError as exc:
             print(f"batch {batch_num}: request failed — {exc}")
+            return 1
+        except TimeoutError:
+            print(
+                f"batch {batch_num}: client timed out after {args.timeout}s waiting for "
+                f"after_id={after_id} limit={args.limit}. The batch may still be running "
+                f"server-side; re-run with --after-id {after_id} to retry, or lower --limit."
+            )
             return 1
         elapsed = time.time() - t0
 
