@@ -194,8 +194,13 @@ class BCScraperPGImporter(BaseImporter):
             result.errors.append(f"Verify access failed: {exc}")
             return result
 
-        # Steps that manage their own batched transactions internally
-        _self_transacting = {self._import_permits}
+        # Steps that manage their own batched transactions internally.
+        # Both now loop their *_batch() method to completion (see
+        # _run_stage_to_completion), and each batch call provides its own
+        # transaction boundary -- wrapping them again here would nest
+        # transactions, which the repository contract documents as
+        # implementation-defined.
+        _self_transacting = {self._import_permits, self._import_contract_awards}
 
         steps = [
             self._import_companies,
@@ -686,43 +691,56 @@ class BCScraperPGImporter(BaseImporter):
         )
         return result
 
-    # ── Permits ───────────────────────────────────────────────────────────
+    # ── Batch stage orchestration ───────────────────────────────────────────
 
-    _PERMIT_TX_SIZE = 2000  # rows per transaction batch
+    _DEFAULT_STAGE_BATCH_LIMIT = 5000
+
+    def _run_stage_to_completion(self, batch_method, limit: int | None = None) -> ImportResult:
+        """
+        Loop a `*_batch(after_id, limit) -> (result, last_id, has_more)`
+        method until has_more=False, merging every page's ImportResult into
+        one aggregate.
+
+        This is what lets the full (unbounded) importer methods
+        (_import_permits, _import_contract_awards) reuse the exact same
+        per-batch connection lifecycle and row-processing logic as the
+        standalone REST batch endpoints, instead of maintaining a second,
+        separate fetch-loop implementation per stage. As a side effect this
+        also removes a latent reliability gap the old fetch-loops had: each
+        one held a single Postgres connection open for the entire unbounded
+        scan (permits: 111k+ rows), which is exactly the kind of long-lived
+        connection the original SSL-timeout fix (per-stage reconnection) was
+        meant to avoid -- just not at the sub-stage level. Looping the batch
+        method means each page gets its own short-lived connection instead.
+        """
+        effective_limit = limit if limit is not None else self._DEFAULT_STAGE_BATCH_LIMIT
+        aggregate = ImportResult(importer="stage")
+        after_id = 0
+        while True:
+            sub, after_id, has_more = batch_method(after_id=after_id, limit=effective_limit)
+            aggregate.entities_created += sub.entities_created
+            aggregate.entities_updated += sub.entities_updated
+            aggregate.relations_created += sub.relations_created
+            aggregate.relations_updated += sub.relations_updated
+            aggregate.errors.extend(sub.errors)
+            aggregate.warnings.extend(sub.warnings)
+            if not has_more:
+                break
+        return aggregate
+
+    # ── Permits ───────────────────────────────────────────────────────────
 
     def _import_permits(self) -> ImportResult:
         """
         Import public.permits → BizEntityKind.PERMIT.
         Link company_id → permit via HAS_PERMIT relation where set.
-        Processed in batches of _PERMIT_TX_SIZE to bound transaction size.
+
+        Reuses _import_permits_batch() via _run_stage_to_completion() --
+        looping the same batch method POST /api/import/permits/batch calls,
+        rather than a separate full-table fetch-loop implementation.
         """
-        result = ImportResult(importer=f"{self.name}:permits")
-        conn = self._get_source_conn()
-        try:
-            cur = conn.cursor()
-            try:
-                cur.execute("""
-                    SELECT id, external_id, address, city, permit_type,
-                           project_value, applicant, contractor,
-                           lifecycle_status, source, company_id
-                    FROM public.permits
-                    ORDER BY id
-                """)
-                batch: list = []
-                while True:
-                    rows = cur.fetchmany(self._batch_size)
-                    if not rows:
-                        if batch:
-                            self._process_permit_batch(batch, result)
-                        break
-                    batch.extend(rows)
-                    if len(batch) >= self._PERMIT_TX_SIZE:
-                        self._process_permit_batch(batch, result)
-                        batch = []
-            finally:
-                cur.close()
-        finally:
-            self._close_source_conn(conn)
+        result = self._run_stage_to_completion(self._import_permits_batch)
+        result.importer = f"{self.name}:permits"
 
         logger.info(
             "permits: created=%d updated=%d rels_created=%d errors=%d",
@@ -921,28 +939,15 @@ class BCScraperPGImporter(BaseImporter):
         Relations:
           canonical company --AWARDED_TO--> contract
           contract          --AWARDED_TO--> winner company entity
+
+        Reuses _import_contract_awards_batch() via _run_stage_to_completion()
+        -- looping the same batch method POST /api/import/contract_awards/batch
+        calls, rather than a separate full-table fetch-loop implementation.
+        Each page provides its own transaction (see _import_contract_awards_batch),
+        which is why this step is in run()'s _self_transacting set.
         """
-        result = ImportResult(importer=f"{self.name}:contract_awards")
-        conn = self._get_source_conn()
-        try:
-            cur = conn.cursor()
-            try:
-                cur.execute("""
-                    SELECT id, external_id, title, winner_company, award_value,
-                           currency, award_date, buyer_organization,
-                           procurement_category, source, company_id
-                    FROM public.contract_awards
-                    ORDER BY id
-                """)
-                while True:
-                    rows = cur.fetchmany(self._batch_size)
-                    if not rows:
-                        break
-                    self._process_contract_awards_batch(rows, result)
-            finally:
-                cur.close()
-        finally:
-            self._close_source_conn(conn)
+        result = self._run_stage_to_completion(self._import_contract_awards_batch)
+        result.importer = f"{self.name}:contract_awards"
 
         logger.info(
             "contract_awards: created=%d updated=%d rels_created=%d errors=%d",

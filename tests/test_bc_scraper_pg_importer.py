@@ -67,7 +67,12 @@ class _RowsCursor:
         self._rows = list(rows)
         self._idx = 0
 
-    def execute(self, _query: str) -> None:
+    def execute(self, _query: str, _params: tuple | None = None) -> None:
+        # _params is accepted (needed since callers may now route through
+        # _fetch_ordered_batch, which always passes params) but not applied
+        # as a real WHERE filter -- every test using this fake keeps its
+        # full row list well under any limit used, so unfiltered fetchall()/
+        # fetchmany() already returns the correct page.
         self._idx = 0
 
     def fetchmany(self, size: int) -> list[tuple]:
@@ -369,6 +374,31 @@ def test_permits_batch_attaches_has_permit_relation_like_full_import(repo: FakeB
     assert len(neighbours) == 1
 
 
+def test_full_import_permits_still_works_after_batch_extraction(repo: FakeBizRepository) -> None:
+    """Regression guard, mirroring the equivalent contract_awards test:
+    _import_permits() (the unbounded path used by run()) must still produce
+    correct results now that it loops _import_permits_batch() internally
+    instead of running its own cursor/fetchmany loop."""
+    company, _ = repo.put_entity(
+        BizEntityKind.COMPANY, "Full Path Permits Co.", attributes={"scraper_id": 7}
+    )
+    rows = [
+        _permit_row(1, "PMT-A", company_id=7),
+        _permit_row(2, "PMT-B"),
+    ]
+    importer = BCScraperPGImporter(repo, conn=_OrderedBatchConnection(rows))
+    importer._company_id_to_uid = {7: company.uid}
+
+    result = importer._import_permits()
+
+    assert result.errors == []
+    assert result.entities_created == 2
+    assert result.relations_created == 1
+    assert len(repo.find(kind=BizEntityKind.PERMIT, limit=100)) == 2
+    neighbours = repo.get_neighbors(company.uid, kinds=[BizRelationKind.HAS_PERMIT])
+    assert len(neighbours) == 1
+
+
 def test_permits_batch_resolves_company_id_via_graph_lookup_without_prior_import(
     repo: FakeBizRepository,
 ) -> None:
@@ -606,16 +636,72 @@ def test_full_import_contract_awards_still_works_after_batch_extraction(
     assert len(repo.find(kind=BizEntityKind.CONTRACT, limit=100)) == 2
 
 
-def test_contract_awards_batch_and_full_path_share_row_processing_helper() -> None:
-    """Both callers must dispatch through the same extracted method — the
-    whole point of this refactor was one copy of the business logic, not two."""
+def test_contract_awards_commits_correctly_against_real_sqlite_repo_no_nested_transaction() -> None:
+    """FakeBizRepository.transaction() is a deepcopy snapshot -- it can't
+    surface a nested-transaction bug. BizRepositorySQLite.transaction() is
+    real: it sets/clears self._in_transaction and calls commit()/rollback()
+    on the actual connection, so if run() ever wrapped
+    _import_contract_awards() in its own outer transaction() call (nesting
+    on top of the per-batch transaction _import_contract_awards_batch()
+    already opens), this backend would either raise, corrupt
+    self._in_transaction, or commit prematurely. Running against a real
+    repo here (not the Fake) is what actually exercises that risk -- this
+    is why _import_contract_awards is in run()'s _self_transacting set."""
+    import sqlite3
+
+    from tenderscope_kg.repository._sqlite import BizRepositorySQLite
+
+    conn = sqlite3.connect(":memory:")
+    real_repo = BizRepositorySQLite(conn)
+    real_repo.setup_schema()
+
+    company, _ = real_repo.put_entity(
+        BizEntityKind.COMPANY, "Real Repo Co.", attributes={"scraper_id": 1}
+    )
+    importer = BCScraperPGImporter(
+        real_repo,
+        conn=_OrderedBatchConnection([_contract_award_row(1, "Real Award", company_id=1)]),
+    )
+
+    result = importer._import_contract_awards()
+
+    assert result.errors == []
+    assert result.entities_created == 1
+    assert result.relations_created == 1
+    assert real_repo._in_transaction is False
+    assert len(real_repo.find(kind=BizEntityKind.CONTRACT, limit=10)) == 1
+
+
+def test_contract_awards_full_path_reuses_batch_method_not_a_duplicate_fetch_loop() -> None:
+    """_import_contract_awards() must orchestrate by looping
+    _import_contract_awards_batch() (via _run_stage_to_completion) rather
+    than maintaining its own separate cursor/fetch-loop implementation --
+    the whole point of this refactor was one copy of the orchestration and
+    one copy of the row-processing logic, not two of either."""
     import inspect
 
     full_source = inspect.getsource(BCScraperPGImporter._import_contract_awards)
     batch_source = inspect.getsource(BCScraperPGImporter._import_contract_awards_batch)
 
-    assert "_process_contract_awards_batch(" in full_source
+    assert "_import_contract_awards_batch" in full_source
+    assert "_run_stage_to_completion" in full_source
+    assert "cur.execute" not in full_source
+    assert "fetchmany" not in full_source
     assert "_process_contract_awards_batch(" in batch_source
+
+
+def test_permits_full_path_reuses_batch_method_not_a_duplicate_fetch_loop() -> None:
+    """Same guarantee as contract_awards, for permits."""
+    import inspect
+
+    full_source = inspect.getsource(BCScraperPGImporter._import_permits)
+    batch_source = inspect.getsource(BCScraperPGImporter._import_permits_batch)
+
+    assert "_import_permits_batch" in full_source
+    assert "_run_stage_to_completion" in full_source
+    assert "cur.execute" not in full_source
+    assert "fetchmany" not in full_source
+    assert "_process_permit_batch(" in batch_source
 
 
 # ── organizations (independent endpoint, no batching required) ─────────────
