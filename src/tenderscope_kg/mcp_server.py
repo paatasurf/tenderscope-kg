@@ -1896,6 +1896,45 @@ class KGServer:
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=500)
 
+        async def handle_import_organizations(request: Request) -> JSONResponse:
+            """Import distinct organization names from tenders/commercial_tenders/
+            arch_tenders -> BizEntityKind.ORGANIZATION.
+
+            Decoupled from the full /api/import sequence so it can complete
+            independently of permits/contract_awards (previously it would
+            never run if the request died during an earlier, much larger
+            step). No pagination needed here, unlike permits/contract_awards:
+            the source query is a DISTINCT/UNION projection across three
+            small tables (not a row-by-row scan of one large table), so the
+            result set is bounded by tenders+commercial_tenders+arch_tenders
+            size and reliably completes in one call well within Railway's
+            request timeout.
+            """
+            import asyncio
+
+            database_url = os.environ.get("DATABASE_URL", "").strip()
+            if not database_url:
+                return JSONResponse({"error": "DATABASE_URL not set"}, status_code=503)
+            if self.db.biz_repo is None:
+                return JSONResponse({"error": "graph repository not initialised"}, status_code=503)
+
+            biz_repo = self.db.biz_repo
+
+            def _run():
+                from tenderscope_kg.importers.bc_scraper_pg_importer import (
+                    BCScraperPGImporter,
+                )
+
+                importer = BCScraperPGImporter(repo=biz_repo, conn=database_url)
+                return importer._import_organizations()
+
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, _run)
+                return JSONResponse({"organizations": result.to_dict()})
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
         from .rest_server import create_rest_app
         from .server_engines import EngineSet
 
@@ -1925,6 +1964,11 @@ class KGServer:
                 Route(
                     "/api/import/contract_awards/batch",
                     endpoint=handle_import_contract_awards_batch,
+                    methods=["POST"],
+                ),
+                Route(
+                    "/api/import/organizations",
+                    endpoint=handle_import_organizations,
                     methods=["POST"],
                 ),
                 Mount("/messages/", app=sse.handle_post_message),

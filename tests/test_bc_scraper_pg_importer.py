@@ -75,6 +75,11 @@ class _RowsCursor:
         self._idx += size
         return batch
 
+    def fetchall(self) -> list[tuple]:
+        batch = self._rows[self._idx :]
+        self._idx = len(self._rows)
+        return batch
+
     def close(self) -> None:
         return None
 
@@ -611,3 +616,48 @@ def test_contract_awards_batch_and_full_path_share_row_processing_helper() -> No
 
     assert "_process_contract_awards_batch(" in full_source
     assert "_process_contract_awards_batch(" in batch_source
+
+
+# ── organizations (independent endpoint, no batching required) ─────────────
+
+
+def test_import_organizations_dedupes_across_tender_tables(repo: FakeBizRepository) -> None:
+    """put_entity()'s (kind, canonical_name) dedup key collapses repeats even
+    if the same name appears more than once across the UNION'd source
+    tables (defense in depth beyond the query's own DISTINCT)."""
+    rows = [
+        ("City of Vancouver",),
+        ("City of Vancouver",),  # repeated, e.g. from a different source table
+        ("BC Ministry of Transportation",),
+    ]
+    importer = BCScraperPGImporter(repo, conn=_RowsConnection(rows))
+
+    result = importer._import_organizations()
+
+    orgs = repo.find(kind=BizEntityKind.ORGANIZATION, limit=100)
+    assert result.errors == []
+    assert result.entities_created == 2
+    assert result.entities_updated == 1
+    assert len(orgs) == 2
+    assert {o.name for o in orgs} == {"City of Vancouver", "BC Ministry of Transportation"}
+
+
+def test_import_organizations_skips_blank_names(repo: FakeBizRepository) -> None:
+    importer = BCScraperPGImporter(repo, conn=_RowsConnection([("",), ("Valid Org",)]))
+
+    result = importer._import_organizations()
+
+    orgs = repo.find(kind=BizEntityKind.ORGANIZATION, limit=100)
+    assert result.entities_created == 1
+    assert [o.name for o in orgs] == ["Valid Org"]
+
+
+def test_import_organizations_does_not_touch_company_identity(repo: FakeBizRepository) -> None:
+    """Organizations must never interact with the company identity boundary
+    WP1-WP3 established — no resolve_company_uid, no company_id_to_uid use."""
+    import inspect
+
+    source = inspect.getsource(BCScraperPGImporter._import_organizations)
+    assert "_company_id_to_uid" not in source
+    assert "resolve_company_uid" not in source
+    assert "BizEntityKind.COMPANY" not in source
