@@ -1,14 +1,18 @@
 """
-Drive the batched permits import against a running tenderscope-kg deployment.
+Drive a batched import endpoint against a running tenderscope-kg deployment.
 
 Usage
 -----
-    python scripts/run_permits_batches.py [--url URL] [--limit N] [--after-id N]
+    python scripts/run_permits_batches.py [--kind {permits,contract_awards}] \\
+        [--url URL] [--limit N] [--after-id N]
 
-Repeatedly POSTs to /api/import/permits/batch, each call processing at most
---limit permit rows, until the server reports has_more=false. Each HTTP
-request stays well under Railway's public-edge timeout since it only
-processes one bounded slice per call.
+Repeatedly POSTs to /api/import/<kind>/batch, each call processing at most
+--limit rows, until the server reports has_more=false. Each HTTP request
+stays well under Railway's public-edge timeout since it only processes one
+bounded slice per call. --kind defaults to "permits" (this script's original
+scope); pass --kind contract_awards to drive that endpoint instead — both
+batch endpoints share the same after_id/limit/has_more contract, so one
+driver loop covers both.
 
 Safe to re-run or resume: pass --after-id to continue from a specific
 cursor (printed after every batch), and BCScraperPGImporter's upserts are
@@ -26,6 +30,7 @@ import urllib.error
 import urllib.request
 
 DEFAULT_URL = "https://tenderscope-kg-production.up.railway.app"
+VALID_KINDS = ("permits", "contract_awards")
 
 
 def _post(url: str, timeout: float) -> dict:
@@ -36,9 +41,15 @@ def _post(url: str, timeout: float) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--kind",
+        choices=VALID_KINDS,
+        default="permits",
+        help="Which batch endpoint to drive (default: permits)",
+    )
     parser.add_argument("--url", default=DEFAULT_URL, help="Base URL of the deployment")
-    parser.add_argument("--limit", type=int, default=5000, help="Permit rows per batch")
-    parser.add_argument("--after-id", type=int, default=0, help="Resume after this permits.id")
+    parser.add_argument("--limit", type=int, default=5000, help="Rows per batch")
+    parser.add_argument("--after-id", type=int, default=0, help="Resume after this row id")
     parser.add_argument(
         "--timeout",
         type=float,
@@ -47,6 +58,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    result_key = f"{args.kind}_batch"
     after_id = args.after_id
     batch_num = 0
     total_created = 0
@@ -55,7 +67,7 @@ def main() -> int:
 
     while True:
         batch_num += 1
-        endpoint = f"{args.url}/api/import/permits/batch?after_id={after_id}&limit={args.limit}"
+        endpoint = f"{args.url}/api/import/{args.kind}/batch?after_id={after_id}&limit={args.limit}"
         t0 = time.time()
         try:
             body = _post(endpoint, args.timeout)
@@ -74,17 +86,17 @@ def main() -> int:
             return 1
         elapsed = time.time() - t0
 
-        permits = body["permits_batch"]
-        total_created += permits["entities_created"]
-        total_updated += permits["entities_updated"]
-        total_errors += len(permits["errors"])
+        stage = body[result_key]
+        total_created += stage["entities_created"]
+        total_updated += stage["entities_updated"]
+        total_errors += len(stage["errors"])
 
         print(
             f"batch {batch_num}: after_id={after_id} -> next_after_id={body['next_after_id']} "
-            f"created={permits['entities_created']} updated={permits['entities_updated']} "
-            f"errors={len(permits['errors'])} elapsed={elapsed:.1f}s has_more={body['has_more']}"
+            f"created={stage['entities_created']} updated={stage['entities_updated']} "
+            f"errors={len(stage['errors'])} elapsed={elapsed:.1f}s has_more={body['has_more']}"
         )
-        for err in permits["errors"]:
+        for err in stage["errors"]:
             print(f"    ERROR: {err}")
 
         if not body["has_more"]:
@@ -92,7 +104,7 @@ def main() -> int:
         after_id = body["next_after_id"]
 
     print(
-        f"\nDone. batches={batch_num} total_created={total_created} "
+        f"\nDone. kind={args.kind} batches={batch_num} total_created={total_created} "
         f"total_updated={total_updated} total_errors={total_errors}"
     )
     return 1 if total_errors else 0
