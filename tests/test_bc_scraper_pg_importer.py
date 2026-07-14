@@ -357,3 +357,49 @@ def test_permits_batch_attaches_has_permit_relation_like_full_import(repo: FakeB
     assert result.relations_created == 1
     neighbours = repo.get_neighbors(company.uid, kinds=[BizRelationKind.HAS_PERMIT])
     assert len(neighbours) == 1
+
+
+def test_permits_batch_resolves_company_id_via_graph_lookup_without_prior_import(
+    repo: FakeBizRepository,
+) -> None:
+    """A fresh importer instance (no prior _import_companies() call) must
+    still attach HAS_PERMIT correctly, by resolving company_id directly
+    against the graph — this is what lets the batch endpoint skip re-running
+    the full companies import on every call."""
+    company, _ = repo.put_entity(
+        BizEntityKind.COMPANY, "Direct Lookup Co.", attributes={"scraper_id": 77}
+    )
+    importer = BCScraperPGImporter(
+        repo, conn=_PermitsBatchConnection([_permit_row(1, "PMT-2", company_id=77)])
+    )
+
+    result, _last_id, _has_more = importer._import_permits_batch(after_id=0, limit=10)
+
+    assert result.relations_created == 1
+    assert importer._company_id_to_uid[77] == company.uid
+    neighbours = repo.get_neighbors(company.uid, kinds=[BizRelationKind.HAS_PERMIT])
+    assert len(neighbours) == 1
+
+
+def test_permits_batch_resolves_alias_company_id_to_canonical(repo: FakeBizRepository) -> None:
+    """company_id may reference an applicant_alias row's own scraper id;
+    resolution must follow ALIAS_OF to the canonical company, matching
+    _import_companies()'s Pass 2 behavior."""
+    canonical, _ = repo.put_entity(
+        BizEntityKind.COMPANY, "Canonical Co.", attributes={"scraper_id": 1}
+    )
+    alias, _ = repo.put_entity(
+        BizEntityKind.COMPANY_ALIAS, "Canonical Co. DBA", attributes={"scraper_id": 2}
+    )
+    repo.put_relation(alias.uid, BizRelationKind.ALIAS_OF, canonical.uid)
+
+    importer = BCScraperPGImporter(
+        repo, conn=_PermitsBatchConnection([_permit_row(1, "PMT-3", company_id=2)])
+    )
+
+    result, _last_id, _has_more = importer._import_permits_batch(after_id=0, limit=10)
+
+    assert result.relations_created == 1
+    assert importer._company_id_to_uid[2] == canonical.uid
+    neighbours = repo.get_neighbors(canonical.uid, kinds=[BizRelationKind.HAS_PERMIT])
+    assert len(neighbours) == 1
