@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import click
 from mcp.server import Server
@@ -1784,7 +1784,26 @@ class KGServer:
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=500)
 
-        _PERMITS_BATCH_MAX_LIMIT = 20000
+        _IMPORT_BATCH_MAX_LIMIT = 20000
+
+        def _parse_batch_query_params(
+            request: Request, max_limit: int
+        ) -> tuple[int, int, Optional[JSONResponse]]:
+            """Parse/validate after_id + limit, shared by every batched-import
+            endpoint. Returns (after_id, limit, error_response); error_response
+            is None on success and must be returned as-is otherwise."""
+            try:
+                after_id = int(request.query_params.get("after_id", 0))
+                limit = int(request.query_params.get("limit", 5000))
+            except ValueError:
+                return 0, 0, JSONResponse(
+                    {"error": "after_id and limit must be integers"}, status_code=400
+                )
+            if limit <= 0 or limit > max_limit:
+                return 0, 0, JSONResponse(
+                    {"error": f"limit must be between 1 and {max_limit}"}, status_code=400
+                )
+            return after_id, limit, None
 
         async def handle_import_permits_batch(request: Request) -> JSONResponse:
             """Phase 2b: import one bounded slice of public.permits per call.
@@ -1802,16 +1821,9 @@ class KGServer:
             if self.db.biz_repo is None:
                 return JSONResponse({"error": "graph repository not initialised"}, status_code=503)
 
-            try:
-                after_id = int(request.query_params.get("after_id", 0))
-                limit = int(request.query_params.get("limit", 5000))
-            except ValueError:
-                return JSONResponse({"error": "after_id and limit must be integers"}, status_code=400)
-            if limit <= 0 or limit > _PERMITS_BATCH_MAX_LIMIT:
-                return JSONResponse(
-                    {"error": f"limit must be between 1 and {_PERMITS_BATCH_MAX_LIMIT}"},
-                    status_code=400,
-                )
+            after_id, limit, error = _parse_batch_query_params(request, _IMPORT_BATCH_MAX_LIMIT)
+            if error is not None:
+                return error
 
             biz_repo = self.db.biz_repo
 
@@ -1832,6 +1844,50 @@ class KGServer:
                 return JSONResponse(
                     {
                         "permits_batch": batch_result.to_dict(),
+                        "after_id": after_id,
+                        "next_after_id": last_id,
+                        "has_more": has_more,
+                    }
+                )
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        async def handle_import_contract_awards_batch(request: Request) -> JSONResponse:
+            """Import one bounded slice of public.contract_awards per call.
+
+            Same batching contract as /api/import/permits/batch: pass
+            after_id=<next_after_id from the previous response> to resume,
+            loop until has_more=false. See scripts/run_permits_batches.py
+            (supports --kind contract_awards).
+            """
+            import asyncio
+
+            database_url = os.environ.get("DATABASE_URL", "").strip()
+            if not database_url:
+                return JSONResponse({"error": "DATABASE_URL not set"}, status_code=503)
+            if self.db.biz_repo is None:
+                return JSONResponse({"error": "graph repository not initialised"}, status_code=503)
+
+            after_id, limit, error = _parse_batch_query_params(request, _IMPORT_BATCH_MAX_LIMIT)
+            if error is not None:
+                return error
+
+            biz_repo = self.db.biz_repo
+
+            def _run_batch():
+                from tenderscope_kg.importers.bc_scraper_pg_importer import (
+                    BCScraperPGImporter,
+                )
+
+                importer = BCScraperPGImporter(repo=biz_repo, conn=database_url)
+                return importer._import_contract_awards_batch(after_id=after_id, limit=limit)
+
+            try:
+                loop = asyncio.get_event_loop()
+                batch_result, last_id, has_more = await loop.run_in_executor(None, _run_batch)
+                return JSONResponse(
+                    {
+                        "contract_awards_batch": batch_result.to_dict(),
                         "after_id": after_id,
                         "next_after_id": last_id,
                         "has_more": has_more,
@@ -1864,6 +1920,11 @@ class KGServer:
                 Route(
                     "/api/import/permits/batch",
                     endpoint=handle_import_permits_batch,
+                    methods=["POST"],
+                ),
+                Route(
+                    "/api/import/contract_awards/batch",
+                    endpoint=handle_import_contract_awards_batch,
                     methods=["POST"],
                 ),
                 Mount("/messages/", app=sse.handle_post_message),

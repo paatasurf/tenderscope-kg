@@ -733,6 +733,46 @@ class BCScraperPGImporter(BaseImporter):
         )
         return result
 
+    def _fetch_ordered_batch(
+        self, columns_sql: str, table: str, after_id: int, limit: int
+    ) -> tuple[list, bool]:
+        """
+        Fetch up to `limit` rows from `public.{table}`, ordered by id, with
+        id > after_id.  Shared pagination primitive for every batched-import
+        endpoint (permits, contract_awards, ...) — opens and closes its own
+        source connection via _get_source_conn()/_close_source_conn(), same
+        per-call reconnection every other stage already uses.
+
+        `columns_sql` and `table` are internal literals supplied by importer
+        code only, never derived from request input — after_id/limit are the
+        only caller-controlled values, and both are passed as query params.
+
+        Returns (rows, has_more) where rows has at most `limit` entries and
+        has_more is True iff more rows exist beyond this page.
+        """
+        conn = self._get_source_conn()
+        try:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    f"""
+                    SELECT {columns_sql}
+                    FROM public.{table}
+                    WHERE id > %s
+                    ORDER BY id
+                    LIMIT %s
+                    """,
+                    (after_id, limit + 1),
+                )
+                rows = cur.fetchall()
+            finally:
+                cur.close()
+        finally:
+            self._close_source_conn(conn)
+
+        has_more = len(rows) > limit
+        return rows[:limit], has_more
+
     def _resolve_company_ids_for_batch(self, rows: list) -> None:
         """
         Populate self._company_id_to_uid for exactly the company_ids referenced
@@ -783,30 +823,14 @@ class BCScraperPGImporter(BaseImporter):
             has_more: True if more rows exist beyond this batch.
         """
         result = ImportResult(importer=f"{self.name}:permits_batch")
-        conn = self._get_source_conn()
-        try:
-            cur = conn.cursor()
-            try:
-                cur.execute(
-                    """
-                    SELECT id, external_id, address, city, permit_type,
-                           project_value, applicant, contractor,
-                           lifecycle_status, source, company_id
-                    FROM public.permits
-                    WHERE id > %s
-                    ORDER BY id
-                    LIMIT %s
-                    """,
-                    (after_id, limit + 1),
-                )
-                rows = cur.fetchall()
-            finally:
-                cur.close()
-        finally:
-            self._close_source_conn(conn)
-
-        has_more = len(rows) > limit
-        batch = rows[:limit]
+        batch, has_more = self._fetch_ordered_batch(
+            columns_sql="id, external_id, address, city, permit_type, "
+            "project_value, applicant, contractor, lifecycle_status, "
+            "source, company_id",
+            table="permits",
+            after_id=after_id,
+            limit=limit,
+        )
         last_id = batch[-1][0] if batch else after_id
         if batch:
             self._resolve_company_ids_for_batch(batch)
@@ -914,95 +938,7 @@ class BCScraperPGImporter(BaseImporter):
                     rows = cur.fetchmany(self._batch_size)
                     if not rows:
                         break
-                    for row in rows:
-                        (
-                            db_id,
-                            external_id,
-                            title,
-                            winner_company,
-                            award_value,
-                            currency,
-                            award_date,
-                            buyer_org,
-                            proc_category,
-                            src,
-                            company_id,
-                        ) = row
-
-                        name = _s(title) or _s(external_id) or f"award-{db_id}"
-                        attrs: dict = {"scraper_id": db_id}
-                        for k, v in [
-                            ("external_id", external_id),
-                            ("winner_company", winner_company),
-                            ("award_value", award_value),
-                            ("currency", currency),
-                            ("award_date", award_date),
-                            ("buyer_organization", buyer_org),
-                            ("procurement_category", proc_category),
-                            ("source", src),
-                        ]:
-                            if _s(str(v) if v is not None else ""):
-                                attrs[k] = v if isinstance(v, (int, float)) else _s(v)
-
-                        try:
-                            _preserved_uid = self._uid_snapshot.get((BizEntityKind.CONTRACT.value, canonicalize(name)))
-                            contract_e, created = self.repo.put_entity(
-                                kind=BizEntityKind.CONTRACT,
-                                name=name,
-                                attributes=attrs,
-                                source=_SOURCE,
-                                write_history=False,
-                                uid=_preserved_uid,
-                            )
-                            if created:
-                                result.entities_created += 1
-                            else:
-                                result.entities_updated += 1
-
-                            # Canonical company → contract
-                            if company_id and company_id in self._company_id_to_uid:
-                                cmp_uid = self._company_id_to_uid[company_id]
-                                _, rc = self.repo.put_relation(
-                                    source_uid=cmp_uid,
-                                    kind=BizRelationKind.AWARDED_TO,
-                                    target_uid=contract_e.uid,
-                                    source=_SOURCE,
-                                    attributes={
-                                        "award_date": _s(award_date),
-                                        "award_value": award_value,
-                                    },
-                                )
-                                if rc:
-                                    result.relations_created += 1
-                                else:
-                                    result.relations_updated += 1
-
-                            # Link contract → winner only when the company already
-                            # exists in the graph (projected from SoR).  Never CREATE.
-                            winner_name = _s(winner_company)
-                            if winner_name:
-                                winner_uid = self._lookup_company_uid_readonly(winner_name)
-                                if winner_uid is not None:
-                                    _, rc2 = self.repo.put_relation(
-                                        source_uid=contract_e.uid,
-                                        kind=BizRelationKind.AWARDED_TO,
-                                        target_uid=winner_uid,
-                                        source=_SOURCE,
-                                    )
-                                    if rc2:
-                                        result.relations_created += 1
-                                    else:
-                                        result.relations_updated += 1
-                                else:
-                                    result.warnings.append(
-                                        f"contract_awards.id={db_id}: "
-                                        f"unresolved winner_company={winner_name!r}; "
-                                        "no existing graph COMPANY match; "
-                                        "contract→winner edge skipped"
-                                    )
-
-                        except Exception as exc:
-                            result.errors.append(f"contract_awards.id={db_id}: {exc}")
+                    self._process_contract_awards_batch(rows, result)
             finally:
                 cur.close()
         finally:
@@ -1016,6 +952,153 @@ class BCScraperPGImporter(BaseImporter):
             len(result.errors),
         )
         return result
+
+    def _process_contract_awards_batch(self, rows: list, result: ImportResult) -> None:
+        """
+        Process one batch of contract_awards rows — identical business logic
+        to the original inline loop in _import_contract_awards(), extracted
+        so the batched endpoint can reuse it without duplicating it.
+
+        Deliberately does NOT open its own transaction (unlike
+        _process_permit_batch): _import_contract_awards() is not
+        self-transacting in run() — the whole step is already wrapped in one
+        outer transaction there, and nesting another transaction inside this
+        helper would risk implementation-defined behavior on that existing
+        path. Callers that need their own transaction boundary (e.g. the
+        batched endpoint) wrap their call to this method themselves.
+        """
+        for row in rows:
+            (
+                db_id,
+                external_id,
+                title,
+                winner_company,
+                award_value,
+                currency,
+                award_date,
+                buyer_org,
+                proc_category,
+                src,
+                company_id,
+            ) = row
+
+            name = _s(title) or _s(external_id) or f"award-{db_id}"
+            attrs: dict = {"scraper_id": db_id}
+            for k, v in [
+                ("external_id", external_id),
+                ("winner_company", winner_company),
+                ("award_value", award_value),
+                ("currency", currency),
+                ("award_date", award_date),
+                ("buyer_organization", buyer_org),
+                ("procurement_category", proc_category),
+                ("source", src),
+            ]:
+                if _s(str(v) if v is not None else ""):
+                    attrs[k] = v if isinstance(v, (int, float)) else _s(v)
+
+            try:
+                _preserved_uid = self._uid_snapshot.get((BizEntityKind.CONTRACT.value, canonicalize(name)))
+                contract_e, created = self.repo.put_entity(
+                    kind=BizEntityKind.CONTRACT,
+                    name=name,
+                    attributes=attrs,
+                    source=_SOURCE,
+                    write_history=False,
+                    uid=_preserved_uid,
+                )
+                if created:
+                    result.entities_created += 1
+                else:
+                    result.entities_updated += 1
+
+                # Canonical company → contract
+                if company_id and company_id in self._company_id_to_uid:
+                    cmp_uid = self._company_id_to_uid[company_id]
+                    _, rc = self.repo.put_relation(
+                        source_uid=cmp_uid,
+                        kind=BizRelationKind.AWARDED_TO,
+                        target_uid=contract_e.uid,
+                        source=_SOURCE,
+                        attributes={
+                            "award_date": _s(award_date),
+                            "award_value": award_value,
+                        },
+                    )
+                    if rc:
+                        result.relations_created += 1
+                    else:
+                        result.relations_updated += 1
+
+                # Link contract → winner only when the company already
+                # exists in the graph (projected from SoR).  Never CREATE.
+                winner_name = _s(winner_company)
+                if winner_name:
+                    winner_uid = self._lookup_company_uid_readonly(winner_name)
+                    if winner_uid is not None:
+                        _, rc2 = self.repo.put_relation(
+                            source_uid=contract_e.uid,
+                            kind=BizRelationKind.AWARDED_TO,
+                            target_uid=winner_uid,
+                            source=_SOURCE,
+                        )
+                        if rc2:
+                            result.relations_created += 1
+                        else:
+                            result.relations_updated += 1
+                    else:
+                        result.warnings.append(
+                            f"contract_awards.id={db_id}: "
+                            f"unresolved winner_company={winner_name!r}; "
+                            "no existing graph COMPANY match; "
+                            "contract→winner edge skipped"
+                        )
+
+            except Exception as exc:
+                result.errors.append(f"contract_awards.id={db_id}: {exc}")
+
+    def _import_contract_awards_batch(
+        self, after_id: int = 0, limit: int = 5000
+    ) -> tuple[ImportResult, int, bool]:
+        """
+        Import one bounded slice of public.contract_awards, ordered by id —
+        the same batching pattern as _import_permits_batch(): resumable via
+        after_id/has_more, resolves company_id per-batch via
+        _resolve_company_ids_for_batch() (no companies re-import needed), and
+        reuses _process_contract_awards_batch() for row processing so
+        business logic is identical to the full _import_contract_awards()
+        path. Wraps the batch in its own transaction since, unlike permits,
+        the full path's transaction is provided by run() rather than by the
+        row-processing helper itself (see _process_contract_awards_batch).
+
+        Returns (result, last_id, has_more) — same contract as
+        _import_permits_batch().
+        """
+        result = ImportResult(importer=f"{self.name}:contract_awards_batch")
+        batch, has_more = self._fetch_ordered_batch(
+            columns_sql="id, external_id, title, winner_company, award_value, "
+            "currency, award_date, buyer_organization, "
+            "procurement_category, source, company_id",
+            table="contract_awards",
+            after_id=after_id,
+            limit=limit,
+        )
+        last_id = batch[-1][0] if batch else after_id
+        if batch:
+            self._resolve_company_ids_for_batch(batch)
+            with self.repo.transaction():
+                self._process_contract_awards_batch(batch, result)
+
+        logger.info(
+            "contract_awards_batch: after_id=%d limit=%d processed=%d created=%d updated=%d has_more=%s",
+            after_id,
+            limit,
+            len(batch),
+            result.entities_created,
+            result.entities_updated,
+            has_more,
+        )
+        return result, last_id, has_more
 
     # ── Organizations (tender buyers) ─────────────────────────────────────
 
